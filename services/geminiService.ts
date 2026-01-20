@@ -1,4 +1,4 @@
-import { GoogleGenAI, FunctionDeclaration, Type } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { ZenResponse, CulturalMode, Language } from "../types";
 import { TOKENS } from "../utils/designSystem";
 
@@ -10,16 +10,38 @@ export const flushTextQueue = (apiKey: string, mode: CulturalMode, lang: Languag
   console.log("Flushing text queue (No-op in Refactor 2.0)");
 };
 
+export const validateAndGetApiKey = async (): Promise<string> => {
+  // Simplified for refactor. Assumes key is in localStorage.
+  const key = localStorage.getItem('GEMINI_API_KEY');
+  if (!key) throw new Error("API_KEY_MISSING");
+  return key;
+};
+
 export const analyzeEnvironment = async (
   apiKey: string,
   base64Image: string
 ): Promise<{ mode: CulturalMode, detected_items: string[] }> => {
-  // Fallback key if not provided
   const key = apiKey || await validateAndGetApiKey();
-  const genAI = new GoogleGenAI({ apiKey: key });
-  const model = genAI.getGenerativeModel({
+  const client = new GoogleGenAI({ apiKey: key });
+
+  const prompt = `
+    Analyze this image to determine the best cultural mode for a Zen session.
+    - If you see markers of Vietnamese culture (e.g., nón lá, bamboo, altar, specific food), return 'VN'.
+    - Otherwise, default to 'EN'.
+    - List top 3 detected items relevant to the context.
+    `;
+
+  const result = await client.models.generateContent({
     model: "gemini-1.5-flash",
-    generationConfig: {
+    contents: [
+      {
+        parts: [
+          { text: prompt },
+          { inlineData: { data: base64Image, mimeType: "image/jpeg" } }
+        ]
+      }
+    ],
+    config: {
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
@@ -32,26 +54,9 @@ export const analyzeEnvironment = async (
     }
   });
 
-  const prompt = `
-    Analyze this image to determine the best cultural mode for a Zen session.
-    - If you see markers of Vietnamese culture (e.g., nón lá, bamboo, altar, specific food), return 'VN'.
-    - Otherwise, default to 'EN'.
-    - List top 3 detected items relevant to the context.
-    `;
-
-  const result = await model.generateContent([
-    prompt,
-    { inlineData: { data: base64Image, mimeType: "image/jpeg" } }
-  ]);
-  const responseText = result.response.text();
+  const responseText = result.text;
+  if (!responseText) throw new Error("No response from AI");
   return JSON.parse(responseText);
-};
-
-export const validateAndGetApiKey = async (): Promise<string> => {
-  // Simplified for refactor. Assumes key is in localStorage.
-  const key = localStorage.getItem('GEMINI_API_KEY');
-  if (!key) throw new Error("API_KEY_MISSING");
-  return key;
 };
 
 export const sendZenTextQuery = async (
@@ -61,10 +66,23 @@ export const sendZenTextQuery = async (
   lang: Language
 ): Promise<ZenResponse> => {
   const key = apiKey || await validateAndGetApiKey();
-  const genAI = new GoogleGenAI({ apiKey: key });
-  const model = genAI.getGenerativeModel({
+  const client = new GoogleGenAI({ apiKey: key });
+
+  const prompt = `
+    User Text: "${text}"
+    Cultural Mode: ${mode}
+    Language: ${lang}
+    
+    Analyze the user's text and provide a Zen response.
+    If in Vietnamese, use "Thầy" (Teacher) and "con" (Child).
+    `;
+
+  const result = await client.models.generateContent({
     model: "gemini-2.0-flash-exp",
-    generationConfig: {
+    contents: [
+      { parts: [{ text: prompt }] }
+    ],
+    config: {
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
@@ -102,16 +120,7 @@ export const sendZenTextQuery = async (
     }
   });
 
-  const prompt = `
-    User Text: "${text}"
-    Cultural Mode: ${mode}
-    Language: ${lang}
-    
-    Analyze the user's text and provide a Zen response.
-    If in Vietnamese, use "Thầy" (Teacher) and "con" (Child).
-    `;
-
-  const result = await model.generateContent(prompt);
-  const responseText = result.response.text();
-  return JSON.parse(responseText) as ZenResponse;
+  const responseText = result.text;
+  if (!responseText) throw new Error("No response from AI");
+  return JSON.parse(responseText);
 };
