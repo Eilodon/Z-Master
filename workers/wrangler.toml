@@ -1,0 +1,8 @@
+name = "thay-airlock"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[vars]
+ALLOWED_ORIGIN = "http://localhost:5173" # Change to production domain later
+
+# Note: GEMINI_API_KEY should be set via `wrangler secret put GEMINI_API_KEY`

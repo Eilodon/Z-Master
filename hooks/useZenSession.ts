@@ -1,11 +1,5 @@
-
-import * as React from 'react';
-import { useRef, useCallback } from 'react';
-import { ZenLiveSession, sendZenTextQuery } from '../services/geminiService';
-import { ZenResponse } from '../types';
-import { haptic } from '../utils/designSystem';
-import { detectEmergency } from '../data/emergencyKeywords';
-import { useUIStore, useZenStore } from '../store/zenStore';
+import { useRef, useEffect, useState } from 'react';
+import { sessionManager } from '../src/core/connection/SessionManager';
 
 interface UseZenSessionProps {
   onEmergencyDetected: () => void;
@@ -16,151 +10,32 @@ export function useZenSession({
   onEmergencyDetected,
   onError
 }: UseZenSessionProps) {
+  // We can expose the analyser for the OrbViz if needed
+  // Since sessionManager is a singleton, we can just access it.
+  // But React might need to know when it changes?
+  // OrbViz uses a ref to analyser usually.
 
-  // Select state from stores to avoid prop drilling
-  const { culturalMode, language, setInputMode, setEmergencyActive } = useUIStore();
-  const { status, setZenData, setConnectionState } = useZenStore();
+  // For now, let's keep the API compatible.
 
-  const liveSessionRef = useRef<ZenLiveSession | null>(null);
+  const connect = () => sessionManager.connect();
+  const disconnect = () => sessionManager.disconnect();
+  const sendText = (text: string) => sessionManager.sendText(text);
+
+  // Analyser is tricky because it's set asynchronously.
+  // We can poll or use a subscription if we add it to SessionManager.
+  // For this refactor, let's expose a getter that the Viz component checks.
+
   const analyserRef = useRef<AnalyserNode | null>(null);
 
-  // Handle session disconnects & reconnects
-  const handleDisconnect = React.useCallback((reason?: string, isReconnecting?: boolean) => {
-    if (isReconnecting) {
-      setConnectionState('reconnecting');
-      if (reason) onError(reason, "warn"); // Show "Reconnecting..."
-      return;
-    }
-
-    // Fallback if connection fails permanently
-    if (reason === "FALLBACK_TO_TEXT") {
-      onError("Mạng yếu, chuyển sang chế độ chat.", "info");
-      setInputMode('text');
-      haptic('warn');
-      setConnectionState('disconnected');
-    } else if (reason) {
-      onError(reason === "Timeout due to inactivity" ? "Đã ngắt kết nối (Tự động)" : reason, "info");
-      setConnectionState('disconnected');
-    } else {
-      // Clean disconnect
-      setConnectionState('disconnected');
-    }
-
-    liveSessionRef.current = null;
-    analyserRef.current = null;
-    useZenStore.getState().transitionTo({ kind: 'idling' });
-  }, [onError, setInputMode, setConnectionState]);
-
-  // Handle incoming data updates from Gemini
-  const handleStateChange = React.useCallback((data: Partial<ZenResponse>) => {
-    useZenStore.setState((prev) => {
-      const newData = prev.zenData ? { ...prev.zenData, ...data } : data as ZenResponse;
-
-      // Emergency Check
-      if (newData.wisdom_text && detectEmergency(newData.wisdom_text)) {
-        setEmergencyActive(true);
-        onEmergencyDetected();
-        liveSessionRef.current?.disconnect();
-      }
-      return { zenData: newData };
-    });
-  }, [onEmergencyDetected, setEmergencyActive]);
-
-  // Connect Function
-  const connect = React.useCallback(async () => {
-    if (status.kind !== 'idling') {
-      liveSessionRef.current?.disconnect();
-      return;
-    }
-
-    try {
-      // NOTE: We do NOT initialize AudioContext here anymore.
-      // It must be done INSIDE ZenLiveSession.connect() after getUserMedia 
-      // to ensure the permission prompt is triggered by the user gesture immediately.
-
-      liveSessionRef.current = new ZenLiveSession(
-        culturalMode,
-        language,
-        handleStateChange,
-        (active) => useZenStore.getState().transitionTo(active ? { kind: 'speaking' } : { kind: 'connected_listening' }),
-        handleDisconnect
-      );
-
-      haptic('success');
-      useZenStore.getState().transitionTo({ kind: 'connecting' });
-      setConnectionState('reconnecting'); // Initial connecting state
-
-      if (liveSessionRef.current) {
-        // This call will trigger the mic permission prompt first
-        const analyser = await liveSessionRef.current.connect();
-        analyserRef.current = analyser;
-        useZenStore.getState().transitionTo({ kind: 'connected_listening' });
-        setConnectionState('connected');
-      }
-
-    } catch (e: any) {
-      // Suppress console error for expected permission issues to keep logs clean
-      const isPermissionIssue = e.message?.includes("PermissionDenied") || e.message?.includes("NoMicrophone");
-      if (!isPermissionIssue) {
-        console.error("Connection failed:", e);
-      }
-
-      useZenStore.getState().transitionTo({ kind: 'idling' });
-      setConnectionState('disconnected');
-
-      // Specific Error Handling
-      if (e.message.includes("PermissionDenied")) {
-        onError("Không có quyền Microphone. Đã chuyển sang chế độ Chat.", "warn");
-        setInputMode('text'); // Auto-switch to text
-      } else if (e.message.includes("NoMicrophone")) {
-        onError("Không tìm thấy Microphone.", "error");
-        setInputMode('text');
-      } else if (e.message.includes("API_KEY_MISSING")) {
-        onError("Vui lòng nhập API Key.", "warn");
-      } else {
-        onError("Lỗi kết nối micro hoặc mạng.", "error");
-      }
-
-      liveSessionRef.current?.disconnect();
-    }
-  }, [status, culturalMode, language, handleStateChange, handleDisconnect, onError, setConnectionState, setInputMode]);
-
-  // Manual Disconnect
-  const disconnect = React.useCallback(() => {
-    if (liveSessionRef.current) {
-      liveSessionRef.current.disconnect();
-      haptic('warn');
-    }
+  // Sync analyserRef with sessionManager
+  // This is a bit hacky but keeps the hook API.
+  // A better way is for OrbViz to ask SessionManager directly.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      analyserRef.current = sessionManager.getAnalyser();
+    }, 100);
+    return () => clearInterval(interval);
   }, []);
-
-  // Text Query Function
-  const sendText = React.useCallback(async (text: string) => {
-    if (!text.trim()) return null;
-    if (liveSessionRef.current) liveSessionRef.current.disconnect();
-
-    try {
-      haptic('selection');
-      useZenStore.getState().transitionTo({ kind: 'processing' });
-
-      const apiKey = "";
-      const response = await sendZenTextQuery(apiKey, text, culturalMode, language);
-
-      setZenData(response);
-      haptic('success');
-      useZenStore.getState().transitionTo({ kind: 'idling' });
-
-      return response;
-    } catch (e: any) {
-      console.error(e);
-      if (e.message.includes("API_KEY_MISSING")) {
-        onError("Vui lòng nhập API Key để tiếp tục.", "warn");
-      } else {
-        onError("Không thể xử lý yêu cầu", "error");
-      }
-      useZenStore.getState().transitionTo({ kind: 'idling' });
-      return null;
-    }
-  }, [culturalMode, language, onError, setZenData]);
 
   return {
     connect,
