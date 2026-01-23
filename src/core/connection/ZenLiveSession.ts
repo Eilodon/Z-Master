@@ -1,4 +1,5 @@
 import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type } from "@google/genai";
+import { logger } from '../../utils/logger';
 import { ZenResponse, VisionAnalysis, CulturalMode, Language } from "../../../types";
 import {
   AUDIO_WORKLET_CODE,
@@ -143,7 +144,7 @@ export class ZenLiveSession {
         }
       });
     } catch (err: any) {
-      console.error("Critical: Audio permission missing in connect phase.");
+      logger.error("Critical: Audio permission missing in connect phase.");
       throw new Error("PermissionDenied");
     }
 
@@ -164,7 +165,7 @@ export class ZenLiveSession {
       try {
         await this.inputContext.audioWorklet.addModule(workletUrl);
       } catch (e: any) {
-        if (!e.message?.includes('already exists')) console.warn("Worklet setup warning:", e);
+        if (!e.message?.includes('already exists')) logger.warn("Worklet setup warning:", e);
       }
       URL.revokeObjectURL(workletUrl);
 
@@ -201,7 +202,7 @@ export class ZenLiveSession {
                   media: { mimeType: `audio/pcm;rate=${this.inputContext!.sampleRate}`, data: base64 }
                 });
               }).catch(err => {
-                console.warn("Dropped audio chunk", err);
+                logger.warn("Dropped audio chunk", err);
               });
             }
           }
@@ -228,14 +229,14 @@ export class ZenLiveSession {
         },
         callbacks: {
           onopen: () => {
-            console.log("Gemini Connected");
+            logger.log("Gemini Connected");
             this.reconnectAttempts = 0;
             this.onDisconnectCallback(undefined, false);
           },
           onmessage: this.handleMessage.bind(this),
           onclose: (e) => this.handleConnectionLoss("closed", e),
           onerror: (err) => {
-            console.error(err);
+            logger.error(err);
             this.handleConnectionLoss("error");
           }
         }
@@ -244,7 +245,7 @@ export class ZenLiveSession {
       return analyser;
 
     } catch (e: any) {
-      console.error("Setup error:", e);
+      logger.error("Setup error:", e);
       throw e;
     }
   }
@@ -259,7 +260,7 @@ export class ZenLiveSession {
       this.onDisconnectCallback("Đã có mạng trở lại. Đang kết nối...", true);
       validateAndGetApiKey().then(key => {
         flushTextQueue(key, this.mode, this.lang);
-        this.connect(true).catch(e => console.error("Auto-reconnect failed", e));
+        this.connect(true).catch(e => logger.error("Auto-reconnect failed", e));
       });
     }
   }
@@ -289,7 +290,7 @@ export class ZenLiveSession {
       this.sessionPromise = null;
       setTimeout(() => {
         if (this.isManuallyClosed) return;
-        this.connect(true).catch(e => console.error("Reconnect attempt failed", e));
+        this.connect(true).catch(e => logger.error("Reconnect attempt failed", e));
       }, delay);
     } else {
       this.disconnect("FALLBACK_TO_TEXT");

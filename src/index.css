@@ -2,4 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom Utilities if needed */
+/* Custom Utilities */
+.dock-voice {
+  min-width: 240px;
+}
+
+.dock-text {
+  min-width: 320px;
+}

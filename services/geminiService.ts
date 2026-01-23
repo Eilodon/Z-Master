@@ -1,6 +1,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { ZenResponse, CulturalMode, Language } from "../types";
 import { TOKENS } from "../utils/designSystem";
+import { SecureKeyManager } from "./secureKeyManager";
+import { InputSanitizer } from "./inputSanitizer";
 
 // Queue for initial text context if needed
 let textQueue: { role: string, text: string }[] = [];
@@ -11,10 +13,13 @@ export const flushTextQueue = (apiKey: string, mode: CulturalMode, lang: Languag
 };
 
 export const validateAndGetApiKey = async (): Promise<string> => {
-  // Simplified for refactor. Assumes key is in localStorage.
-  const key = localStorage.getItem('GEMINI_API_KEY');
-  if (!key) throw new Error("API_KEY_MISSING");
-  return key;
+  try {
+    // Use secure key manager instead of localStorage
+    return await SecureKeyManager.getApiKey();
+  } catch (error) {
+    console.error("[GeminiService] API key retrieval failed:", error);
+    throw new Error("API_KEY_MISSING");
+  }
 };
 
 export const analyzeEnvironment = async (
@@ -66,10 +71,33 @@ export const sendZenTextQuery = async (
   lang: Language
 ): Promise<ZenResponse> => {
   const key = apiKey || await validateAndGetApiKey();
+  
+  // Sanitize input text
+  const sanitizationResult = InputSanitizer.sanitizePrompt(text, `Zen session in ${mode} mode, language: ${lang}`);
+  
+  if (!sanitizationResult.isSafe) {
+    console.warn('[GeminiService] Input sanitization detected threats:', sanitizationResult.threats);
+    // For safety threats, return a calm response instead of processing
+    return {
+      emotion: 'calm',
+      wisdom_text: lang === 'vi' 
+        ? "Thầy cảm nhận được sự căng thẳng trong lời con. Hãy cùng hít thở thật sâu." 
+        : "I sense some tension in your words. Let's take a deep breath together.",
+      wisdom_english: "Breathing in, I calm my body.",
+      user_transcript: sanitizationResult.sanitized,
+      breathing: '4-7-8',
+      confidence: 0.9,
+      reasoning_steps: ['INPUT_SANITIZATION_TRIGGERED', 'SAFETY_FIRST_RESPONSE'],
+      quantum_metrics: { coherence: 0.8, entanglement: 0.6, presence: 0.9 },
+      awareness_stage: 'mindful',
+      consciousness_dimensions: { contextual: 0.7, emotional: 0.8, cultural: 0.6, wisdom: 0.9, uncertainty: 0.4, relational: 0.7 }
+    };
+  }
+
   const client = new GoogleGenAI({ apiKey: key });
 
   const prompt = `
-    User Text: "${text}"
+    User Text: "${sanitizationResult.sanitized}"
     Cultural Mode: ${mode}
     Language: ${lang}
     
