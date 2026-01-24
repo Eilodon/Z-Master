@@ -97,20 +97,17 @@ export const useZenStore = create<ZenSessionState>((set, get) => ({
 
   transitionTo: (newStatus) => {
     const current = get().status;
-    const allowed = checkTransition(current, newStatus);
-    if (allowed) {
-      set({ status: newStatus });
+    const result = ExtremeStateMachine.transitionWithGuard(current, newStatus);
+    
+    if (result.success) {
+      set({ status: result.actualState });
     } else {
-      console.error(`[ZenStore] Invalid State Transition: ${current.kind} -> ${newStatus.kind}`);
-      // CRITICAL FIX: Maintain state consistency - never allow invalid transitions
-      // Instead, log the error and keep the current valid state
-      // In tests, we need to allow some transitions for testing purposes
-      if (process.env.NODE_ENV === 'test') {
-        console.warn('[ZenStore] Allowing invalid transition in test environment');
-        set({ status: newStatus });
-      } else {
-        throw new Error(`Invalid state transition attempted: ${current.kind} -> ${newStatus.kind}`);
+      // Graceful degradation - don't throw exceptions
+      if (result.reason?.includes('Circuit breaker')) {
+        set({ status: result.actualState });
       }
+      // Log for monitoring but don't crash
+      console.error('[ZenStore] Transition failed:', result.reason);
     }
   },
 
@@ -125,23 +122,85 @@ export const useZenStore = create<ZenSessionState>((set, get) => ({
   setCameraStatus: (status) => set({ cameraStatus: status }),
 }));
 
-// -- Invariant Checker --
-function checkTransition(from: AppStatus, to: AppStatus): boolean {
-  if (to.kind === 'error') return true; // Can error from anywhere
-  if (from.kind === 'error' && to.kind === 'idling') return true; // Reset
+// --- EXTREME STATE MACHINE WITH FAULT TOLERANCE ---
+// Implements Netflix-style circuit breaker + Facebook XState patterns
+// Type-safe transitions with graceful degradation
 
-  switch (from.kind) {
-    case 'idling':
-      return to.kind === 'connecting' || to.kind === 'processing'; // Allow direct to processing for text mode
-    case 'connecting':
-      return to.kind === 'connected_listening' || to.kind === 'idling'; // cancel or success
-    case 'connected_listening':
-      return to.kind === 'processing' || to.kind === 'idling' || to.kind === 'connecting'; // re-connect
-    case 'processing':
-      return to.kind === 'speaking' || to.kind === 'connected_listening' || to.kind === 'idling';
-    case 'speaking':
-      return to.kind === 'connected_listening' || to.kind === 'idling';
-    default:
-      return true;
+interface TransitionGuard {
+  canTransition(from: AppStatus, to: AppStatus): boolean;
+  onInvalidTransition?(from: AppStatus, to: AppStatus): void;
+}
+
+class ExtremeStateMachine {
+  private static transitionHistory: Array<{from: string, to: string, timestamp: number}> = [];
+  private static circuitBreakerThreshold = 5;
+  private static failureCount = 0;
+  
+  static transitionWithGuard(
+    current: AppStatus, 
+    target: AppStatus, 
+    guard: TransitionGuard = defaultGuard
+  ): { success: boolean; actualState: AppStatus; reason?: string } {
+    const canTransition = guard.canTransition(current, target);
+    
+    if (!canTransition) {
+      this.failureCount++;
+      
+      // Circuit breaker pattern - prevent cascade failures
+      if (this.failureCount >= this.circuitBreakerThreshold) {
+        console.error('[StateMachine] Circuit breaker triggered - entering safe mode');
+        return { 
+          success: false, 
+          actualState: { kind: 'error', message: 'System in safe mode' },
+          reason: 'Circuit breaker triggered'
+        };
+      }
+      
+      // Graceful degradation - don't crash the app
+      guard.onInvalidTransition?.(current, target);
+      this.transitionHistory.push({
+        from: current.kind,
+        to: target.kind,
+        timestamp: Date.now()
+      });
+      
+      return { 
+        success: false, 
+        actualState: current, 
+        reason: `Invalid transition: ${current.kind} -> ${target.kind}`
+      };
+    }
+    
+    // Success - reset failure count
+    this.failureCount = 0;
+    return { success: true, actualState: target };
   }
+}
+
+const defaultGuard: TransitionGuard = {
+  canTransition: (from, to) => {
+    if (to.kind === 'error') return true;
+    if (from.kind === 'error' && to.kind === 'idling') return true;
+    
+    const validTransitions: Record<string, string[]> = {
+      'idling': ['connecting', 'processing'],
+      'connecting': ['connected_listening', 'idling'],
+      'connected_listening': ['processing', 'idling', 'connecting'],
+      'processing': ['speaking', 'connected_listening', 'idling'],
+      'speaking': ['connected_listening', 'idling']
+    };
+    
+    return validTransitions[from.kind]?.includes(to.kind) ?? false;
+  },
+  onInvalidTransition: (from, to) => {
+    console.warn(`[StateMachine] Invalid transition blocked: ${from.kind} -> ${to.kind}`);
+    // Haptic feedback for invalid state
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      navigator.vibrate(100);
+    }
+  }
+};
+
+function checkTransition(from: AppStatus, to: AppStatus): boolean {
+  return ExtremeStateMachine.transitionWithGuard(from, to).success;
 }

@@ -2,6 +2,7 @@ import * as React from 'react';
 import { MainView } from './src/views/MainView';
 import { dbService } from './services/db';
 import { useZenStore } from './store/zenStore';
+import { ExtremeErrorBoundary } from './components/ExtremeErrorBoundary';
 import { CryptoErrorBoundary } from './components/CryptoErrorBoundary';
 
 export default function App() {
@@ -23,8 +24,10 @@ export default function App() {
   }, [setHistory]);
 
   return (
-    <CryptoErrorBoundary>
-      <MainView />
-    </CryptoErrorBoundary>
+    <ExtremeErrorBoundary name="App-Level" severity="critical">
+      <CryptoErrorBoundary>
+        <MainView />
+      </CryptoErrorBoundary>
+    </ExtremeErrorBoundary>
   );
 }
