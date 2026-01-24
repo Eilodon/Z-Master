@@ -1,220 +1,197 @@
-/**
- * Offline AI Service using Gemini Nano (Chrome 131+)
- * Falls back to rule-based responses if Gemini Nano not available
- */
-
+import { CreateMLCEngine, MLCEngine, InitProgressReport } from "@mlc-ai/web-llm";
 import { ZenResponse, Language, CulturalMode } from '../types';
 
-// Type definitions for Chrome's AI APIs
-interface AILanguageModel {
-    create(): Promise<AILanguageModelSession>;
-}
-
-interface AILanguageModelSession {
-    prompt(text: string): Promise<string>;
-    destroy(): void;
-}
-
-interface WindowAI {
-    languageModel?: AILanguageModel;
-}
-
-declare global {
-    interface Window {
-        ai?: WindowAI;
-    }
-}
-
-// Singleton session for reuse
-let nanoSession: AILanguageModelSession | null = null;
-
-/**
- * Check if Gemini Nano is available in the browser
- */
-export const isGeminiNanoAvailable = async (): Promise<boolean> => {
-    try {
-        if ('ai' in window && window.ai?.languageModel) {
-            return true;
-        }
-        return false;
-    } catch {
-        return false;
-    }
+// --- MODEL CONFIGURATION (SOTA JAN 2026) ---
+// Sắp xếp theo thứ tự: Nhẹ nhất -> Nặng nhất
+const MODELS = {
+    ULTRA_LIGHT: "SmolLM2-360M-Instruct-q0f16-MLC", // ~200MB - Luôn chạy được
+    BALANCED: "Llama-3.2-1B-Instruct-q4f16_1-MLC",   // ~800MB - Mobile chuẩn
+    PERFORMANCE: "Llama-3.2-3B-Instruct-q4f16_1-MLC" // ~1.8GB - Desktop/PC
 };
 
-/**
- * Initialize Gemini Nano session
- */
-export const initGeminiNano = async (): Promise<boolean> => {
-    try {
-        if (!window.ai?.languageModel) {
-            console.warn('[OfflineAI] Gemini Nano not available in this browser');
+export class OfflineAIService {
+    private static instance: OfflineAIService;
+    private engine: MLCEngine | null = null;
+    private currentModelId: string | null = null;
+    // Helper to track loading state if needed externally, though not strictly required by interface
+    private isModelLoaded = false;
+    private loadProgressCallback: ((text: string) => void) | null = null;
+
+    private constructor() { }
+
+    static getInstance(): OfflineAIService {
+        if (!OfflineAIService.instance) {
+            OfflineAIService.instance = new OfflineAIService();
+        }
+        return OfflineAIService.instance;
+    }
+
+    setUpdateCallback(callback: (text: string) => void) {
+        this.loadProgressCallback = callback;
+    }
+
+    // Compatibility method for legacy code calling isAvailable
+    async isAvailable(): Promise<boolean> {
+        // Assume always available via WebLLM fallback or native if implemented later
+        return true;
+    }
+
+    /**
+     * Tự động chọn model dựa trên phần cứng (Heuristic check)
+     */
+    private detectBestModel(): string {
+        // 1. Kiểm tra RAM (nếu trình duyệt hỗ trợ)
+        // @ts-ignore
+        const deviceMemory = navigator.deviceMemory || 4; // GB
+        const logicalCores = navigator.hardwareConcurrency || 4;
+
+        // 2. Kiểm tra GPU (Sơ bộ qua WebGL debug info hoặc userAgent)
+        const isMobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
+
+        console.log(`[OfflineAI] Hardware: RAM~${deviceMemory}GB, Cores=${logicalCores}, Mobile=${isMobile}`);
+
+        if (deviceMemory >= 16 && !isMobile) {
+            return MODELS.PERFORMANCE; // PC Mạnh
+        } else if (deviceMemory >= 6 || (deviceMemory >= 4 && !isMobile)) {
+            return MODELS.BALANCED;    // Mobile xịn hoặc Laptop thường
+        } else {
+            return MODELS.ULTRA_LIGHT; // Điện thoại yếu hoặc fallback an toàn
+        }
+    }
+
+    async initialize(): Promise<boolean> {
+        if (this.engine) return true;
+
+        const selectedModel = this.detectBestModel();
+        this.currentModelId = selectedModel;
+
+        this.loadProgressCallback?.(`Đang tối ưu hóa cho thiết bị... (Chọn: ${selectedModel})`);
+
+        try {
+            // Cấu hình Cache để không phải tải lại lần sau
+            this.engine = await CreateMLCEngine(selectedModel, {
+                initProgressCallback: (report: InitProgressReport) => {
+                    this.loadProgressCallback?.(report.text);
+                },
+                appConfig: {
+                    // Cache model vào trình duyệt để dùng offline lần sau
+                    useIndexedDBCache: true,
+                    model_list: []
+                }
+            });
+
+            console.log(`[OfflineAI] Loaded ${selectedModel} successfully`);
+            this.isModelLoaded = true;
+            return true;
+        } catch (error) {
+            console.error("[OfflineAI] Init failed:", error);
+            // Fallback cực đoan: Nếu model xịn lỗi, thử load model siêu nhẹ
+            if (selectedModel !== MODELS.ULTRA_LIGHT) {
+                this.loadProgressCallback?.("Thử lại với phiên bản siêu nhẹ...");
+                return this.fallbackLoad(MODELS.ULTRA_LIGHT);
+            }
             return false;
         }
-
-        nanoSession = await window.ai.languageModel.create();
-        console.log('[OfflineAI] Gemini Nano session initialized');
-        return true;
-    } catch (error) {
-        console.error('[OfflineAI] Failed to initialize Gemini Nano:', error);
-        return false;
     }
-};
 
-/**
- * Get Zen response using Gemini Nano (offline AI)
- */
-export const getOfflineZenResponse = async (
-    text: string,
-    mode: CulturalMode,
-    lang: Language
-): Promise<ZenResponse> => {
-    // Try Gemini Nano first
-    if (nanoSession || await initGeminiNano()) {
+    private async fallbackLoad(modelId: string): Promise<boolean> {
         try {
-            const formality = mode === 'VN' ? 'Sử dụng "Thầy" và "con".' : 'Sử dụng giọng ấm áp.';
-            const langInstruction = lang === 'vi' ? 'Trả lời bằng tiếng Việt.' : 'Reply in English.';
+            this.engine = await CreateMLCEngine(modelId, {
+                initProgressCallback: (report) => this.loadProgressCallback?.(report.text),
+                appConfig: { useIndexedDBCache: true, model_list: [] }
+            });
+            this.currentModelId = modelId;
+            this.isModelLoaded = true;
+            return true;
+        } catch (e) {
+            console.error("[OfflineAI] Critical Fallback Failed", e);
+            return false;
+        }
+    }
 
-            const prompt = `Bạn là một thiền sư Zen lấy cảm hứng từ Thích Nhất Hạnh.
+    async generateResponse(text: string, mode: CulturalMode, lang: Language): Promise<ZenResponse> {
+        if (!this.engine) await this.initialize();
+
+        // System Prompt tối ưu cho model nhỏ (SmolLM/Llama-1B cần prompt ngắn gọn hơn)
+        const isSmallModel = this.currentModelId === MODELS.ULTRA_LIGHT;
+
+        const formality = mode === 'VN' ? 'Sử dụng "Thầy" và "con".' : 'Sử dụng giọng ấm áp.';
+        const langInstruction = lang === 'vi' ? 'Trả lời bằng tiếng Việt.' : 'Reply in English.';
+
+        let systemPrompt = `You are a Zen Master. ${langInstruction}`;
+
+        if (!isSmallModel) {
+            systemPrompt = `Bạn là thiền sư Zen lấy cảm hứng từ Thích Nhất Hạnh.
 ${formality}
 ${langInstruction}
-
 Phân tích tâm trạng người dùng và đưa ra lời khuyên ngắn gọn, từ bi.
-Tin nhắn: "${text}"
-
-Trả lời JSON với format:
-{
-  "emotion": "calm|anxious|sad|joyful|stressed|confused|lonely|seeking|neutral",
-  "wisdom_text": "Lời khuyên ngắn gọn",
-  "breathing": "4-7-8|box-breathing|coherent-breathing|none",
-  "awareness_stage": "reflexive|aware|mindful|contemplative"
-}`;
-
-            const response = await nanoSession!.prompt(prompt);
-
-            // Parse JSON response
-            try {
-                const parsed = JSON.parse(response);
-                return {
-                    emotion: parsed.emotion || 'calm',
-                    wisdom_text: parsed.wisdom_text || response,
-                    wisdom_english: '',
-                    user_transcript: text,
-                    breathing: parsed.breathing || 'none',
-                    confidence: 0.8,
-                    reasoning_steps: ['Offline Mode', 'Gemini Nano', 'Local Processing'],
-                    mindfulness_metrics: { attention_stability: 0.7, emotional_regulation: 0.5, present_moment_awareness: 0.8 },
-                    awareness_stage: parsed.awareness_stage || 'mindful',
-                    psychological_dimensions: {
-                        contextual: 0.6, emotional: 0.7, cultural: 0.5,
-                        wisdom: 0.6, acceptance: 0.3, relational: 0.5
-                    },
-                    ambient_sound: 'silence'
-                };
-            } catch {
-                // If JSON parse fails, use raw response as wisdom text
-                return createBasicResponse(response, text, lang);
-            }
-        } catch (error) {
-            console.error('[OfflineAI] Gemini Nano query failed:', error);
+Trả lời JSON format: { "emotion": "...", "wisdom_text": "...", "breathing": "..." }`;
+        } else {
+            // Prompt tối giản cho model nhỏ
+            systemPrompt += ` Reply JSON.`;
         }
-    }
 
-    // Fallback to simple rule-based response
-    return getRuleBasedResponse(text, lang);
-};
+        const userPrompt = `Tin nhắn: "${text}"`;
+        let rawResponse = "";
 
-/**
- * Simple rule-based fallback when Gemini Nano is not available
- */
-const getRuleBasedResponse = (text: string, lang: Language): ZenResponse => {
-    const lowerText = text.toLowerCase();
-
-    // Simple emotion detection
-    let emotion: ZenResponse['emotion'] = 'neutral';
-    let breathing: ZenResponse['breathing'] = 'none';
-    let wisdom_text = '';
-
-    // Vietnamese patterns
-    const sadPatterns = ['buồn', 'khóc', 'mất', 'đau', 'sad', 'cry', 'lost', 'hurt'];
-    const anxiousPatterns = ['lo', 'sợ', 'căng thẳng', 'stress', 'anxiety', 'worry', 'fear'];
-    const angryPatterns = ['tức', 'giận', 'bực', 'angry', 'mad', 'frustrated'];
-
-    if (sadPatterns.some(p => lowerText.includes(p))) {
-        emotion = 'sad';
-        breathing = '4-7-8';
-        wisdom_text = lang === 'vi'
-            ? 'Nỗi buồn cũng như đám mây, nó sẽ qua đi. Hãy để Thầy ở bên con trong khoảnh khắc này.'
-            : 'Sadness, like clouds, will pass. Let me be with you in this moment.';
-    } else if (anxiousPatterns.some(p => lowerText.includes(p))) {
-        emotion = 'anxious';
-        breathing = 'box-breathing';
-        wisdom_text = lang === 'vi'
-            ? 'Hơi thở là mỏ neo đưa con về hiện tại. Hít vào, con bình an. Thở ra, con mỉm cười.'
-            : 'Breath is your anchor to the present. Breathing in, I am calm. Breathing out, I smile.';
-    } else if (angryPatterns.some(p => lowerText.includes(p))) {
-        emotion = 'stressed';
-        breathing = 'coherent-breathing';
-        wisdom_text = lang === 'vi'
-            ? 'Hãy ôm lấy cơn giận như mẹ ôm lấy đứa con đang khóc. Sự từ bi bắt đầu từ chính mình.'
-            : 'Hold your anger like a mother holds a crying child. Compassion begins with yourself.';
-    } else {
-        emotion = 'calm';
-        wisdom_text = lang === 'vi'
-            ? 'Thầy nghe đây. Hãy thở và cảm nhận sự hiện diện của khoảnh khắc này.'
-            : 'I am here. Breathe and feel the present_moment_awareness of this moment.';
-    }
-
-    return {
-        emotion,
-        wisdom_text,
-        wisdom_english: 'Breathing in, I return to the island of self.',
-        user_transcript: text,
-        breathing,
-        confidence: 0.6,
-        reasoning_steps: ['Offline Mode', 'Rule-based Fallback', 'Pattern Matching'],
-        mindfulness_metrics: { attention_stability: 0.5, emotional_regulation: 0.3, present_moment_awareness: 0.6 },
-        awareness_stage: 'reflexive',
-        psychological_dimensions: {
-            contextual: 0.4, emotional: 0.5, cultural: 0.4,
-            wisdom: 0.4, acceptance: 0.5, relational: 0.3
-        },
-        ambient_sound: 'bowl'
-    };
-};
-
-/**
- * Create basic response from raw text
- */
-const createBasicResponse = (wisdomText: string, userText: string, lang: Language): ZenResponse => {
-    return {
-        emotion: 'calm',
-        wisdom_text: wisdomText,
-        wisdom_english: '',
-        user_transcript: userText,
-        breathing: 'none',
-        confidence: 0.7,
-        reasoning_steps: ['Offline Mode', 'Gemini Nano', 'Raw Response'],
-        mindfulness_metrics: { attention_stability: 0.6, emotional_regulation: 0.4, present_moment_awareness: 0.7 },
-        awareness_stage: 'mindful',
-        psychological_dimensions: {
-            contextual: 0.5, emotional: 0.6, cultural: 0.5,
-            wisdom: 0.5, acceptance: 0.4, relational: 0.4
-        },
-        ambient_sound: 'silence'
-    };
-};
-
-/**
- * Cleanup Nano session
- */
-export const destroyNanoSession = () => {
-    if (nanoSession) {
         try {
-            nanoSession.destroy();
+            if (!this.engine) throw new Error("Engine not initialized");
+
+            const response = await this.engine.chat.completions.create({
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: userPrompt }
+                ],
+                // temperature: 0.7, // Optional: add flexibility
+                stream: false,
+                response_format: { type: "json_object" }
+            });
+            rawResponse = response.choices[0].message.content || "";
+
+            // Basic parsing attempt
+            const parsed = JSON.parse(rawResponse);
+            return {
+                emotion: parsed.emotion || 'calm',
+                wisdom_text: parsed.wisdom_text || rawResponse,
+                wisdom_english: '',
+                user_transcript: text,
+                breathing: parsed.breathing || 'none',
+                confidence: 0.9,
+                reasoning_steps: ['On-device inference', this.currentModelId || 'Unknown'],
+                mindfulness_metrics: { attention_stability: 0.8, emotional_regulation: 0.9, present_moment_awareness: 0.8 },
+                awareness_stage: 'aware',
+                psychological_dimensions: { contextual: 0.5, emotional: 0.5, cultural: 0.5, wisdom: 0.5, acceptance: 0.5, relational: 0.5 },
+                ambient_sound: 'silence'
+            };
+
         } catch (e) {
-            console.warn('[OfflineAI] Session cleanup warning:', e);
+            console.error("[OfflineAI] Generation failed", e);
+            return this.getRuleBasedResponse(text, lang, rawResponse);
         }
-        nanoSession = null;
     }
-};
+
+    private getRuleBasedResponse(text: string, lang: Language, rawWisdom: string): ZenResponse {
+        return {
+            emotion: 'calm',
+            wisdom_text: rawWisdom || (lang === 'vi' ? `[${this.currentModelId?.split('-')[0]}] Tâm an vạn sự an.` : `[${this.currentModelId?.split('-')[0]}] Peace in mind, peace in world.`),
+            wisdom_english: '',
+            user_transcript: text,
+            breathing: '4-7-8',
+            confidence: 0.6,
+            reasoning_steps: ['Offline Mode', 'Fallback Rules'],
+            mindfulness_metrics: { attention_stability: 0.5, emotional_regulation: 0.5, present_moment_awareness: 0.5 },
+            awareness_stage: 'reflexive',
+            psychological_dimensions: {
+                contextual: 0.5, emotional: 0.5, cultural: 0.5,
+                wisdom: 0.5, acceptance: 0.5, relational: 0.5
+            },
+            ambient_sound: 'bowl'
+        };
+    }
+}
+
+// --- LEGACY EXPORTS FOR COMPATIBILITY ---
+export const isGeminiNanoAvailable = async () => OfflineAIService.getInstance().isAvailable();
+export const initGeminiNano = async () => OfflineAIService.getInstance().initialize();
+export const getOfflineZenResponse = async (text: string, mode: CulturalMode, lang: Language) =>
+    OfflineAIService.getInstance().generateResponse(text, mode, lang);

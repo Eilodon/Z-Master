@@ -1,19 +1,54 @@
 export interface Env {
     GEMINI_API_KEY: string;
     ALLOWED_ORIGIN: string;
+    ENVIRONMENT?: string;
+    RATE_LIMITER?: any; // Simple binding type
 }
+
+// Minimal type definitions for Cloudflare Workers
+declare global {
+    class WebSocketPair {
+        0: WebSocket;
+        1: WebSocket;
+    }
+    interface ResponseInit {
+        webSocket?: WebSocket;
+    }
+    interface ExecutionContext {
+        waitUntil(promise: Promise<any>): void;
+        passThroughOnException(): void;
+    }
+}
+
 
 export default {
     async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-        // 1. Invariant Check: Origin Security
+        // 1. INVARIANT: Strict Origin Check (Safe by Default)
+        // Hardened: Deny UNLESS explicitly 'development' AND matching origin
         const origin = request.headers.get("Origin");
         const allowedOrigin = env.ALLOWED_ORIGIN || "http://localhost:5173";
 
-        // Allow localhost for dev, but enforce strict check in prod
-        // const isDev = allowedOrigin.includes("localhost");
-        // if (!isDev && origin !== allowedOrigin) {
-        //     return new Response("Forbidden: Invalid Origin", { status: 403 });
-        // }
+        const isProduction = env.ENVIRONMENT !== 'development'; // Default to Production if undefined
+
+        if (isProduction && origin !== allowedOrigin) {
+            return new Response("Forbidden: Origin Violation (Strict)", { status: 403 });
+        }
+
+        // 2. INVARIANT: Rate Limiting (Token Bucket)
+        // Giả sử dùng Cloudflare Rate Limiting API hoặc Durable Object đơn giản
+        // Nếu binding RATE_LIMITER tồn tại (đã config trong wrangler.toml)
+        if (env.RATE_LIMITER) {
+            const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+            try {
+                const { success } = await env.RATE_LIMITER.limit({ key: ip });
+                if (!success) {
+                    return new Response("Too Many Requests", { status: 429 });
+                }
+            } catch (e) {
+                // Ignore if binding fails locally or mocking needed
+                console.warn("Rate limit check failed", e);
+            }
+        }
 
         // CORs Preflight
         if (request.method === "OPTIONS") {
@@ -66,7 +101,7 @@ export default {
                     return new Response(`Upstream Error: ${googleResponse.statusText}`, { status: 502 });
                 }
 
-                const googleSocket = googleResponse.webSocket;
+                const googleSocket = (googleResponse as any).webSocket;
                 if (!googleSocket) return new Response("No socket from upstream", { status: 502 });
 
                 const [client, server] = Object.values(new WebSocketPair());
@@ -78,7 +113,6 @@ export default {
                 googleSocket.addEventListener("message", e => server.send(e.data));
                 server.addEventListener("close", () => googleSocket.close());
                 googleSocket.addEventListener("close", () => server.close());
-                // Handle errors?
 
                 return new Response(null, { status: 101, webSocket: client });
 
@@ -94,10 +128,6 @@ export default {
             headers: request.headers,
             body: request.body
         });
-
-        // Remove Host header to avoid conflicts? Request constructor usually handles this.
-        // But we DO need to remove Origin potentially? 
-        // Actually Google API expects secure context.
 
         try {
             const response = await fetch(newRequest);
