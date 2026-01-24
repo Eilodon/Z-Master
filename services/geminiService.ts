@@ -1,8 +1,27 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, setDefaultBaseUrls } from "@google/genai";
 import { ZenResponse, CulturalMode, Language } from "../types";
-import { TOKENS } from "../utils/designSystem";
-import { getOfflineZenResponse, isGeminiNanoAvailable } from "./offlineAI";
+import { getOfflineZenResponse } from "./offlineAI";
 import { ConversationMemoryService } from "./conversationMemoryService";
+
+// --- AIRLOCK CONFIGURATION ---
+// The API Key is now injected by the Cloudflare Worker.
+// We use a dummy key to satisfy the SDK requirement.
+const AIRLOCK_DUMMY_KEY = "AIRLOCK_PROTECTED";
+
+// Use environment variable for Worker URL or default to local dev
+// In production, this should be the deployed worker URL
+const AIRLOCK_URL = import.meta.env.VITE_AIRLOCK_URL || "http://localhost:8787";
+
+// Configure default base URL for the SDK to point to Airlock
+try {
+  // Ensure the URL ends with the version if needed, or if the SDK appends it.
+  // The SDK usually expects the base host or full base url.
+  // Based on the worker logic, we just redirect path.
+  // The SDK default is likely "https://generativelanguage.googleapis.com"
+  setDefaultBaseUrls({ geminiUrl: AIRLOCK_URL });
+} catch (e) {
+  console.warn("Failed to set default base URLs for Airlock", e);
+}
 
 // Queue for initial text context if needed
 let textQueue: { role: string, text: string }[] = [];
@@ -12,32 +31,18 @@ export const flushTextQueue = (apiKey: string, mode: CulturalMode, lang: Languag
   console.log("Flushing text queue (No-op in Refactor 2.0)");
 };
 
+// Deprecated: API Key is no longer validated on client
 export const validateAndGetApiKey = async (): Promise<string> => {
-  try {
-    const key = localStorage.getItem('GEMINI_API_KEY');
-    if (!key) throw new Error("API_KEY_MISSING");
-    return key;
-  } catch (error) {
-    console.error("[GeminiService] API key retrieval failed:", error);
-    throw new Error("API_KEY_MISSING");
-  }
+  return AIRLOCK_DUMMY_KEY;
 };
 
 export const analyzeEnvironment = async (
-  apiKey: string,
+  apiKey: string, // Kept for signature compatibility, unused
   base64Image: string
 ): Promise<{ mode: CulturalMode, detected_items: string[] }> => {
-  let key = apiKey;
-  if (!key) {
-    try {
-      key = await validateAndGetApiKey();
-    } catch (e) {
-      console.warn("[GeminiService] No API Key for camera analysis.");
-      throw new Error("API_KEY_REQUIRED_FOR_CAMERA");
-    }
-  }
 
-  const client = new GoogleGenAI({ apiKey: key });
+  // Initialize Client pointing to Airlock Proxy via setDefaultBaseUrls
+  const client = new GoogleGenAI({ apiKey: AIRLOCK_DUMMY_KEY });
 
   const prompt = `
     Analyze this image to determine the best cultural mode for a Zen session.
@@ -80,10 +85,10 @@ export const analyzeEnvironment = async (
 };
 
 /**
- * Send text query - uses Online (Gemini API) or Offline (Gemini Nano) based on aiMode
+ * Send text query - uses Online (Airlock) or Offline (Gemini Nano) based on aiMode
  */
 export const sendZenTextQuery = async (
-  apiKey: string,
+  apiKey: string, // Unused
   text: string,
   mode: CulturalMode,
   lang: Language,
@@ -93,18 +98,6 @@ export const sendZenTextQuery = async (
   if (useOffline) {
     console.log("[GeminiService] Using Offline AI (Gemini Nano)");
     return getOfflineZenResponse(text, mode, lang);
-  }
-
-  // Online mode - need API key
-  let key = apiKey;
-  if (!key) {
-    try {
-      key = await validateAndGetApiKey();
-    } catch (e) {
-      // No API key - always fallback to Offline AI (Nano or Rule-based)
-      console.log("[GeminiService] No API key, using Offline AI fallback");
-      return getOfflineZenResponse(text, mode, lang);
-    }
   }
 
   // Basic sanitization
@@ -125,7 +118,7 @@ export const sendZenTextQuery = async (
     console.warn('[GeminiService] Failed to load narrative:', err);
   }
 
-  const client = new GoogleGenAI({ apiKey: key });
+  const client = new GoogleGenAI({ apiKey: AIRLOCK_DUMMY_KEY });
 
   const prompt = `
     User Text: "${sanitized}"

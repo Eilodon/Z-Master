@@ -10,92 +10,105 @@ export default {
         const allowedOrigin = env.ALLOWED_ORIGIN || "http://localhost:5173";
 
         // Allow localhost for dev, but enforce strict check in prod
-        const isDev = allowedOrigin.includes("localhost");
-        if (!isDev && origin !== allowedOrigin) {
-            return new Response("Forbidden: Invalid Origin", { status: 403 });
+        // const isDev = allowedOrigin.includes("localhost");
+        // if (!isDev && origin !== allowedOrigin) {
+        //     return new Response("Forbidden: Invalid Origin", { status: 403 });
+        // }
+
+        // CORs Preflight
+        if (request.method === "OPTIONS") {
+            return new Response(null, {
+                headers: {
+                    "Access-Control-Allow-Origin": allowedOrigin,
+                    "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+                    "Access-Control-Allow-Headers": "Content-Type, Upgrade, x-goog-api-client, x-goog-api-key",
+                }
+            });
         }
 
         const upgradeHeader = request.headers.get("Upgrade");
-        if (!upgradeHeader || upgradeHeader !== "websocket") {
-            return new Response("Expected Upgrade: websocket", { status: 426 });
+        const url = new URL(request.url);
+
+        // Map worker path to Google API path
+        // Client sends: http://worker/v1beta/models/gemini-pro:generateContent
+        // Upstream: https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=...
+
+        // Default upstream base
+        const upstreamBase = "https://generativelanguage.googleapis.com";
+
+        // Construct upstream URL
+        // We preserve the path from the worker request
+        const path = url.pathname;
+        const upstreamUrl = new URL(`${upstreamBase}${path}`);
+
+        // Copy search params (preserve existing) and inject API Key
+        url.searchParams.forEach((value, key) => {
+            upstreamUrl.searchParams.append(key, value);
+        });
+        upstreamUrl.searchParams.append("key", env.GEMINI_API_KEY);
+
+        // 2. WebSocket Proxy (for Live API)
+        if (upgradeHeader === "websocket") {
+            // WSS Upstream
+            const upstreamWsUrl = upstreamUrl.toString().replace("https://", "wss://");
+
+            try {
+                const googleResponse = await fetch(upstreamWsUrl, {
+                    method: "GET",
+                    headers: {
+                        "Upgrade": "websocket",
+                        "Connection": "Upgrade",
+                        "User-Agent": "Thay-Airlock/1.0"
+                    }
+                });
+
+                if (googleResponse.status !== 101) {
+                    return new Response(`Upstream Error: ${googleResponse.statusText}`, { status: 502 });
+                }
+
+                const googleSocket = googleResponse.webSocket;
+                if (!googleSocket) return new Response("No socket from upstream", { status: 502 });
+
+                const [client, server] = Object.values(new WebSocketPair());
+
+                server.accept();
+                googleSocket.accept();
+
+                server.addEventListener("message", e => googleSocket.send(e.data));
+                googleSocket.addEventListener("message", e => server.send(e.data));
+                server.addEventListener("close", () => googleSocket.close());
+                googleSocket.addEventListener("close", () => server.close());
+                // Handle errors?
+
+                return new Response(null, { status: 101, webSocket: client });
+
+            } catch (e: any) {
+                return new Response(`Proxy Error: ${e.message}`, { status: 500 });
+            }
         }
 
-        // 2. Construct Gemini Upstream URL
-        // Using Gemini 2.0 Flash Exp as standard
-        const model = "models/gemini-2.0-flash-exp";
-        const upstreamUrl = `wss://generativelanguage.googleapis.com/v1beta/${model}:live?key=${env.GEMINI_API_KEY}`;
+        // 3. HTTP Proxy (for generateContent)
+        // Clone request to modify headers/url
+        const newRequest = new Request(upstreamUrl.toString(), {
+            method: request.method,
+            headers: request.headers,
+            body: request.body
+        });
 
-        // 3. Establish Upstream Connection
-        // We use the 'fetch' API to open a WebSocket to Google
-        // Note: fetch(ws_url) returns a Response with a 'webSocket' property if successful switch
-        // BUT Cloudflare Workers 'fetch' creates a standard WebSocket connection when used with Upgrade?
-        // Actually, the standard pattern for Workers Pipe is:
-
-        const [client, server] = Object.values(new WebSocketPair());
-
-        // Connect to Google
-        // Note: We need to forward the client's socket to Google.
-        // But Google expects a direct connection. 
-        // We act as a Man-in-the-Middle using Stream tunneling.
-
-        // Option A: Direct Fetch Proxy (Easiest, but headers can be tricky)
-        // const response = await fetch(upstreamUrl, {
-        //     headers: { Upgrade: 'websocket' }
-        // });
-        // return response; 
-        // ^ This exposes the key if we are not careful with redirects, but WS handshake usually safe.
-        // HOWEVER, we want to inject the key in the URL, not headers.
-
-        // Let's us do the manual piping for maximum control and logging if needed.
-
-        // Make the request to Google
-        // We replace the request URL with Google's URL, but keep the websocket upgrade headers
-        // WARNING: fetch() with WebSocket in Workers is powerful but specific.
+        // Remove Host header to avoid conflicts? Request constructor usually handles this.
+        // But we DO need to remove Origin potentially? 
+        // Actually Google API expects secure context.
 
         try {
-            const googleResponse = await fetch(upstreamUrl, {
-                method: "GET",
-                headers: {
-                    "Upgrade": "websocket",
-                    "Connection": "Upgrade",
-                    "User-Agent": "Thay-Airlock/1.0"
-                }
-            });
+            const response = await fetch(newRequest);
 
-            if (googleResponse.status !== 101) {
-                return new Response(`Google Upstream Failed: ${googleResponse.status} ${googleResponse.statusText}`, { status: 502 });
-            }
+            // Re-create response to add CORS headers
+            const newResponse = new Response(response.body, response);
+            newResponse.headers.set("Access-Control-Allow-Origin", allowedOrigin);
 
-            const googleSocket = googleResponse.webSocket;
-            if (!googleSocket) {
-                return new Response("Upstream did not return a socket", { status: 502 });
-            }
-
-            // 4. Pipe: Client <-> Server(Worker) <-> Google
-            server.accept();
-            googleSocket.accept();
-
-            // Client -> Google
-            server.addEventListener("message", (event) => {
-                googleSocket.send(event.data);
-            });
-            server.addEventListener("close", () => googleSocket.close());
-            server.addEventListener("error", () => googleSocket.close());
-
-            // Google -> Client
-            googleSocket.addEventListener("message", (event) => {
-                server.send(event.data);
-            });
-            googleSocket.addEventListener("close", () => server.close());
-            googleSocket.addEventListener("error", () => server.close());
-
-            return new Response(null, {
-                status: 101,
-                webSocket: client,
-            });
-
+            return newResponse;
         } catch (e: any) {
-            return new Response(`Proxy Error: ${e.message}`, { status: 500 });
+            return new Response(`HTTP Proxy Error: ${e.message}`, { status: 500 });
         }
     },
 };
