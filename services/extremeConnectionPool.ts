@@ -26,9 +26,12 @@ interface ConnectionMetrics {
 class ExtremeConnectionPool {
   private static instance: ExtremeConnectionPool;
   private connections = new Map<string, PooledConnection>();
-  private maxPoolSize = 10;
+  private maxPoolSize: number;
   private connectionTimeout = 30000; // 30 seconds
-  private healthCheckInterval = 5000; // 5 seconds
+  private healthCheckInterval = 10000; // 10 seconds (reduced frequency)
+  private isPoolingEnabled = false;
+  private networkCondition: 'stable' | 'unstable' | 'poor' = 'stable';
+  private isMobile = false;
   private metrics: ConnectionMetrics = {
     totalConnections: 0,
     activeConnections: 0,
@@ -38,8 +41,185 @@ class ExtremeConnectionPool {
   };
 
   private constructor() {
-    // Start health monitoring
-    this.startHealthCheck();
+    // Mobile-first initialization
+    this.isMobile = this.detectMobileDevice();
+    this.maxPoolSize = this.calculateOptimalPoolSize();
+    this.setupNetworkMonitoring();
+    
+    // Only start health monitoring if pooling is beneficial
+    if (this.isPoolingEnabled) {
+      this.startHealthCheck();
+    }
+  }
+
+  // --- MOBILE-FIRST CONFIGURATION ---
+  private detectMobileDevice(): boolean {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+           'ontouchstart' in window ||
+           navigator.maxTouchPoints > 0;
+  }
+
+  private calculateOptimalPoolSize(): number {
+    if (this.isMobile) {
+      return 1; // Mobile: single connection only
+    }
+    
+    // Desktop: based on network conditions
+    switch (this.networkCondition) {
+      case 'stable':
+        return 2; // Stable network: minimal pooling
+      case 'unstable':
+        return 3; // Unstable: moderate pooling
+      case 'poor':
+        return 1; // Poor: single connection
+      default:
+        return 2;
+    }
+  }
+
+  private setupNetworkMonitoring(): void {
+    // Monitor network conditions
+    if ('connection' in navigator) {
+      const connection = (navigator as any).connection;
+      
+      // Initial assessment
+      this.updateNetworkCondition(connection);
+      
+      // Listen for changes
+      connection.addEventListener('change', () => {
+        this.updateNetworkCondition(connection);
+        this.adaptPoolSize();
+      });
+    } else {
+      // Fallback: detect via performance
+      this.detectNetworkConditionViaPerformance();
+    }
+  }
+
+  private updateNetworkCondition(connection: any): void {
+    const effectiveType = connection.effectiveType || '4g';
+    const downlink = connection.downlink || 10;
+    const rtt = connection.rtt || 100;
+
+    // Determine network condition
+    if (effectiveType === '4g' && downlink > 5 && rtt < 200) {
+      this.networkCondition = 'stable';
+    } else if (effectiveType === '3g' || (downlink > 1 && rtt < 500)) {
+      this.networkCondition = 'unstable';
+    } else {
+      this.networkCondition = 'poor';
+    }
+
+    // Enable pooling only if beneficial
+    this.isPoolingEnabled = this.shouldEnablePooling();
+  }
+
+  private detectNetworkConditionViaPerformance(): void {
+    // Fallback network detection using performance metrics
+    const startTime = performance.now();
+    
+    fetch('https://httpbin.org/json', { method: 'HEAD' })
+      .then(response => {
+        const latency = performance.now() - startTime;
+        
+        if (latency < 200) {
+          this.networkCondition = 'stable';
+        } else if (latency < 500) {
+          this.networkCondition = 'unstable';
+        } else {
+          this.networkCondition = 'poor';
+        }
+        
+        this.isPoolingEnabled = this.shouldEnablePooling();
+      })
+      .catch(() => {
+        this.networkCondition = 'poor';
+        this.isPoolingEnabled = false;
+      });
+  }
+
+  private shouldEnablePooling(): boolean {
+    // Only enable pooling if it provides actual benefits
+    if (this.isMobile) {
+      return false; // Never pool on mobile
+    }
+    
+    if (this.networkCondition === 'stable') {
+      return false; // No need for pooling on stable networks
+    }
+    
+    if (this.networkCondition === 'poor') {
+      return false; // Single connection better on poor networks
+    }
+    
+    // Only enable on unstable networks
+    return this.networkCondition === 'unstable';
+  }
+
+  private adaptPoolSize(): void {
+    const newSize = this.calculateOptimalPoolSize();
+    
+    if (newSize !== this.maxPoolSize) {
+      logger.info(`[ConnectionPool] Adapting pool size: ${this.maxPoolSize} -> ${newSize}`);
+      
+      // Close excess connections
+      if (newSize < this.maxPoolSize) {
+        this.closeExcessConnections(newSize);
+      }
+      
+      this.maxPoolSize = newSize;
+      
+      // Start/stop health monitoring based on pooling status
+      if (this.isPoolingEnabled && !this.isHealthMonitoringActive()) {
+        this.startHealthCheck();
+      } else if (!this.isPoolingEnabled && this.isHealthMonitoringActive()) {
+        this.stopHealthCheck();
+      }
+    }
+  }
+
+  private closeExcessConnections(targetSize: number): void {
+    const connections = Array.from(this.connections.entries());
+    const excessCount = connections.length - targetSize;
+    
+    if (excessCount > 0) {
+      // Close least recently used connections
+      connections.sort(([, a], [, b]) => a.lastUsed - b.lastUsed);
+      
+      for (let i = 0; i < excessCount; i++) {
+        const [id, connection] = connections[i];
+        if (connection.socket) {
+          connection.socket.close();
+        }
+        this.connections.delete(id);
+        
+        logger.info(`[ConnectionPool] Closed excess connection: ${id}`);
+      }
+    }
+  }
+
+  private isHealthMonitoringActive(): boolean {
+    return this.healthCheckIntervalId !== undefined;
+  }
+
+  private healthCheckIntervalId: NodeJS.Timeout | undefined;
+
+  private startHealthCheck(): void {
+    if (this.healthCheckIntervalId) return;
+    
+    this.healthCheckIntervalId = setInterval(() => {
+      this.performHealthCheck();
+    }, this.healthCheckInterval);
+    
+    logger.info('[ConnectionPool] Started health monitoring');
+  }
+
+  private stopHealthCheck(): void {
+    if (this.healthCheckIntervalId) {
+      clearInterval(this.healthCheckIntervalId);
+      this.healthCheckIntervalId = undefined;
+      logger.info('[ConnectionPool] Stopped health monitoring');
+    }
   }
 
   static getInstance(): ExtremeConnectionPool {
@@ -54,6 +234,11 @@ class ExtremeConnectionPool {
     url: string, 
     quality: 'high' | 'medium' | 'low' = 'high'
   ): Promise<PooledConnection> {
+    // Skip pooling if disabled
+    if (!this.isPoolingEnabled) {
+      return this.createSingleConnection(url, quality);
+    }
+
     const connectionId = this.generateConnectionId(url, quality);
     
     // Try to reuse existing connection
@@ -68,6 +253,11 @@ class ExtremeConnectionPool {
       return existingConnection;
     }
 
+    // Check pool size limit
+    if (this.connections.size >= this.maxPoolSize) {
+      this.closeExcessConnections(this.maxPoolSize - 1);
+    }
+
     // Create new connection
     const newConnection = await this.createNewConnection(url, quality);
     this.connections.set(connectionId, newConnection);
@@ -76,6 +266,42 @@ class ExtremeConnectionPool {
     
     logger.info(`[ConnectionPool] Created new connection: ${connectionId}`);
     return newConnection;
+  }
+
+  private async createSingleConnection(
+    url: string, 
+    quality: 'high' | 'medium' | 'low'
+  ): Promise<PooledConnection> {
+    const startTime = performance.now();
+    const connectionId = this.generateConnectionId(url, quality);
+    
+    return new Promise((resolve, reject) => {
+      const socket = new WebSocket(url);
+      const connection: PooledConnection = {
+        id: connectionId,
+        socket,
+        lastUsed: Date.now(),
+        isActive: true,
+        retryCount: 0,
+        quality,
+        latency: 0
+      };
+
+      socket.onopen = () => {
+        connection.latency = performance.now() - startTime;
+        this.updateAverageLatency(connection.latency);
+        resolve(connection);
+      };
+
+      socket.onerror = (error) => {
+        logger.error(`[ConnectionPool] Connection failed: ${connectionId}`, error);
+        reject(error);
+      };
+
+      socket.onclose = () => {
+        this.handleConnectionClose(connectionId);
+      };
+    });
   }
 
   // --- CONNECTION RELEASE ---
@@ -149,12 +375,6 @@ class ExtremeConnectionPool {
   }
 
   // --- HEALTH MONITORING ---
-  private startHealthCheck(): void {
-    setInterval(() => {
-      this.performHealthCheck();
-    }, this.healthCheckInterval);
-  }
-
   private performHealthCheck(): void {
     const now = Date.now();
     let cleanupCount = 0;

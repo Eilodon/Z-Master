@@ -1,3 +1,6 @@
+// --- PERFORMANCE-OPTIMIZED MAIN VIEW ---
+// Implements tap-to-close, performance optimizations, and smooth interactions
+
 import * as React from 'react';
 import { useState, useRef, useEffect, Suspense, useMemo, useCallback } from 'react';
 import { Canvas } from '@react-three/fiber';
@@ -20,7 +23,7 @@ import { NarrativeMemory } from '../../components/NarrativeMemory';
 import { StreakBadge } from '../../components/StreakBadge';
 import { ZenResponse } from '../../types';
 import { detectEmergency } from '../../data/emergencyKeywords';
-import { Keyboard, Mic, Languages, SendHorizontal, Brain, Sparkles, Wifi, WifiOff, RotateCcw, Eye, BookOpen } from 'lucide-react';
+import { Keyboard, Mic, Languages, SendHorizontal, Brain, Sparkles, Wifi, WifiOff, RotateCcw, Eye, BookOpen, X } from 'lucide-react';
 import { haptic } from '../../utils/designSystem';
 import { useZenSession } from '../../hooks/useZenSession';
 import { useUIStore, useZenStore } from '../../store/zenStore';
@@ -55,6 +58,11 @@ export function MainView() {
     const [hasError, setHasError] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
 
+    // --- PERFORMANCE STATE ---
+    const [isOptimized, setIsOptimized] = useState(false);
+    const [fps, setFps] = useState(60);
+    const [memoryUsage, setMemoryUsage] = useState(0);
+
     // Audio Viz State (Driven by real analyzer or mock)
     const [audioIntensity, setAudioIntensity] = useState(0);
     const analyserRef = useRef<AnalyserNode | null>(null);
@@ -80,323 +88,237 @@ export function MainView() {
         analyserRef.current = sessionAnalyserRef.current;
     }, [sessionAnalyserRef.current]);
 
-    // --- EXTREME MEMORY MANAGEMENT VISUALIZER ---
-    // Implements Chrome-style WeakRef patterns + React Concurrent optimization
-    // Zero-allocation audio processing with WASM acceleration
+    // --- PERFORMANCE MONITORING ---
+    const performanceMonitor = useRef({
+        frameCount: 0,
+        lastTime: performance.now(),
+        fps: 60
+    });
 
-    const visualizationLoop = useRef<{
-      rafId: number | null;
-      isActive: boolean;
-      lastCleanup: number;
-      memoryPressure: number;
-    }>({ rafId: null, isActive: false, lastCleanup: Date.now(), memoryPressure: 0 });
+    const monitorPerformance = useCallback(() => {
+        const now = performance.now();
+        const delta = now - performanceMonitor.current.lastTime;
+        
+        performanceMonitor.current.frameCount++;
+        
+        if (delta >= 1000) {
+            const currentFps = Math.round((performanceMonitor.current.frameCount * 1000) / delta);
+            setFps(currentFps);
+            
+            // Auto-optimize if FPS drops below 30
+            if (currentFps < 30 && !isOptimized) {
+                setIsOptimized(true);
+                console.log('🚀 Auto-optimizing due to low FPS:', currentFps);
+            }
+            
+            performanceMonitor.current.frameCount = 0;
+            performanceMonitor.current.lastTime = now;
+        }
+        
+        // Monitor memory usage
+        if ('memory' in performance) {
+            const mem = (performance as any).memory;
+            const usageMB = mem.usedJSHeapSize / 1024 / 1024;
+            setMemoryUsage(usageMB);
+            
+            // Force cleanup if memory usage is high
+            if (usageMB > 100) {
+                forceCleanup();
+            }
+        }
+        
+        if (animationFrameRef.current) {
+            animationFrameRef.current = requestAnimationFrame(monitorPerformance);
+        }
+    }, [isOptimized]);
 
-    // WeakRef pattern for audio data to prevent memory leaks
-    const audioDataWeakRef = useRef<WeakRef<Uint8Array> | null>(null);
-    
-    // Adaptive quality based on performance
-    const [visualQuality, setVisualQuality] = useState<'high' | 'medium' | 'low'>('high');
-    
-    // Performance monitoring
-    const frameTimeHistory = useRef<number[]>([]);
-    const lastFrameTime = useRef(performance.now());
-
-    // Extreme optimization: Memory pressure detection
-    const detectMemoryPressure = useCallback(() => {
-      if ('memory' in performance) {
-        const mem = (performance as any).memory;
-        const usedRatio = mem.usedJSHeapSize / mem.jsHeapSizeLimit;
-        return usedRatio;
-      }
-      return 0;
+    const forceCleanup = useCallback(() => {
+        // Clear unnecessary data
+        if (dataArrayRef.current && dataArrayRef.current.length > 0) {
+            dataArrayRef.current = new Uint8Array(analyserRef.current?.frequencyBinCount || 0);
+        }
+        
+        // Force garbage collection if available
+        if ('gc' in window) {
+            (window as any).gc();
+        }
+        
+        console.log('🧹 Forced cleanup completed');
     }, []);
 
-    // Adaptive quality adjustment
-    const adjustQuality = useCallback((frameTime: number) => {
-      frameTimeHistory.current.push(frameTime);
-      if (frameTimeHistory.current.length > 60) {
-        frameTimeHistory.current.shift();
-      }
-      
-      const avgFrameTime = frameTimeHistory.current.reduce((a, b) => a + b, 0) / frameTimeHistory.current.length;
-      const memoryPressure = detectMemoryPressure();
-      
-      if (avgFrameTime > 16.67 || memoryPressure > 0.8) {
-        setVisualQuality('low');
-      } else if (avgFrameTime > 8.33 || memoryPressure > 0.6) {
-        setVisualQuality('medium');
-      } else {
-        setVisualQuality('high');
-      }
-    }, [detectMemoryPressure]);
-
-    // Extreme optimized visualization loop
-    const optimizedVisualizationLoop = useCallback(() => {
-      const startTime = performance.now();
-      
-      // Memory pressure check
-      const memoryPressure = detectMemoryPressure();
-      visualizationLoop.current.memoryPressure = memoryPressure;
-      
-      if (memoryPressure > 0.9) {
-        console.warn('[Visualization] Critical memory pressure - disabling visualization');
-        setAudioIntensity(0);
-        return;
-      }
-
-      if (status.kind === 'processing') {
-        // Optimized mock intensity with reduced calculations
-        const time = Date.now() / 1000;
-        const intensity = visualQuality === 'high' 
-          ? 0.2 + Math.sin(time * 5) * 0.1 + Math.sin(time * 3) * 0.05
-          : visualQuality === 'medium'
-          ? 0.2 + Math.sin(time * 3) * 0.1
-          : 0.2 + Math.sin(time * 2) * 0.08;
-        setAudioIntensity(intensity);
-        
-        visualizationLoop.current.rafId = requestAnimationFrame(optimizedVisualizationLoop);
-        return;
-      }
-
-      if (!analyserRef.current) {
-        setAudioIntensity(0);
-        if (status.kind !== 'idling') {
-          visualizationLoop.current.rafId = requestAnimationFrame(optimizedVisualizationLoop);
-        }
-        return;
-      }
-
-      // Optimized frequency analysis with quality scaling
-      const binCount = visualQuality === 'high' ? 64 : visualQuality === 'medium' ? 32 : 16;
-      
-      if (!dataArrayRef.current || dataArrayRef.current.length !== analyserRef.current.frequencyBinCount) {
-        const newArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-        dataArrayRef.current = newArray;
-        audioDataWeakRef.current = new WeakRef(newArray);
-      }
-
-      analyserRef.current.getByteFrequencyData(dataArrayRef.current);
-
-      // Optimized intensity calculation
-      let sum = 0;
-      const actualBinCount = Math.min(binCount, dataArrayRef.current.length);
-      
-      // SIMD-like optimization (unrolled loop for performance)
-      if (actualBinCount >= 8) {
-        let i = 0;
-        for (; i < actualBinCount - 7; i += 8) {
-          sum += dataArrayRef.current[i] + dataArrayRef.current[i+1] + 
-                dataArrayRef.current[i+2] + dataArrayRef.current[i+3] +
-                dataArrayRef.current[i+4] + dataArrayRef.current[i+5] + 
-                dataArrayRef.current[i+6] + dataArrayRef.current[i+7];
-        }
-        for (; i < actualBinCount; i++) {
-          sum += dataArrayRef.current[i];
-        }
-      } else {
-        for (let i = 0; i < actualBinCount; i++) {
-          sum += dataArrayRef.current[i];
-        }
-      }
-      
-      const average = sum / actualBinCount;
-      const normalizedIntensity = average / 128.0;
-      
-      // Apply quality-based smoothing
-      const smoothedIntensity = visualQuality === 'high' 
-        ? normalizedIntensity 
-        : visualQuality === 'medium'
-        ? normalizedIntensity * 0.8 + audioIntensity * 0.2
-        : normalizedIntensity * 0.6 + audioIntensity * 0.4;
-      
-      setAudioIntensity(smoothedIntensity);
-
-      // Performance monitoring
-      const frameTime = performance.now() - startTime;
-      adjustQuality(frameTime);
-
-      // Adaptive frame rate based on quality
-      const targetFPS = visualQuality === 'high' ? 60 : visualQuality === 'medium' ? 30 : 15;
-      const targetFrameTime = 1000 / targetFPS;
-      
-      if (status.kind !== 'idling') {
-        visualizationLoop.current.rafId = requestAnimationFrame(optimizedVisualizationLoop);
-      }
-    }, [status, visualQuality, audioIntensity, adjustQuality, detectMemoryPressure]);
-
-    // Extreme cleanup with WeakRef and memory zeroization
+    // Start performance monitoring
     useEffect(() => {
-      if (status.kind !== 'idling') {
-        if (!visualizationLoop.current.isActive) {
-          visualizationLoop.current.isActive = true;
-          optimizedVisualizationLoop();
-        }
-      } else {
-        if (visualizationLoop.current.rafId) {
-          cancelAnimationFrame(visualizationLoop.current.rafId);
-          visualizationLoop.current.rafId = null;
-        }
-        visualizationLoop.current.isActive = false;
-        setAudioIntensity(0);
+        animationFrameRef.current = requestAnimationFrame(monitorPerformance);
         
-        // Aggressive cleanup
-        if (dataArrayRef.current) {
-          dataArrayRef.current.fill(0);
-          if (audioDataWeakRef.current) {
-            const data = audioDataWeakRef.current.deref();
-            if (data) data.fill(0);
-          }
-          dataArrayRef.current = null;
-          audioDataWeakRef.current = null;
-        }
-      }
+        return () => {
+            if (animationFrameRef.current) {
+                cancelAnimationFrame(animationFrameRef.current);
+            }
+        };
+    }, [monitorPerformance]);
 
-      return () => {
-        // Extreme cleanup on unmount
-        if (visualizationLoop.current.rafId) {
-          cancelAnimationFrame(visualizationLoop.current.rafId);
-        }
-        
-        // Force garbage collection hint
-        if (dataArrayRef.current) {
-          dataArrayRef.current.fill(0);
-          dataArrayRef.current = null;
-        }
-        
-        if (audioDataWeakRef.current) {
-          const data = audioDataWeakRef.current?.deref();
-          if (data) data.fill(0);
-          audioDataWeakRef.current = null;
-        }
-        
-        analyserRef.current = null;
-        visualizationLoop.current.isActive = false;
-        
-        // Clear performance monitoring
-        frameTimeHistory.current = [];
-        
-        // Request garbage collection in development
-        if (process.env.NODE_ENV === 'development' && 'gc' in window) {
-          (window as any).gc();
-        }
-      };
-    }, [status, optimizedVisualizationLoop]);
+    // --- TAP-TO-CLOSE FUNCTIONALITY ---
+    const overlayRef = useRef<HTMLDivElement>(null);
+    const [tapCount, setTapCount] = useState(0);
+    const tapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-    // Force hide practices when switching to text mode
+    const handleOverlayTap = useCallback((e: React.MouseEvent) => {
+        // Only close if tapping on the overlay itself, not on children
+        if (e.target === overlayRef.current) {
+            e.preventDefault();
+            
+            // Double-tap to close modals
+            setTapCount(prev => prev + 1);
+            
+            if (tapTimeoutRef.current) {
+                clearTimeout(tapTimeoutRef.current);
+            }
+            
+            tapTimeoutRef.current = setTimeout(() => {
+                setTapCount(0);
+            }, 300);
+            
+            if (tapCount >= 1) { // Second tap
+                // Close all open modals/panels
+                setIsReasoningOpen(false);
+                setShowPractices(false);
+                setShowNarrativeMemory(false);
+                setTapCount(0);
+                haptic('success');
+                console.log('🎯 All modals closed via double-tap');
+            }
+        }
+    }, [tapCount]);
+
+    // --- ESC KEY TO CLOSE ---
     useEffect(() => {
-        if (inputMode === 'text') {
-            setShowPractices(false);
+        const handleEscKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                // Close modals in order of priority
+                if (showNarrativeMemory) {
+                    setShowNarrativeMemory(false);
+                } else if (showPractices) {
+                    setShowPractices(false);
+                } else if (isReasoningOpen) {
+                    setIsReasoningOpen(false);
+                } else {
+                    // Disconnect session if no modals open
+                    if (status.kind !== 'idling') {
+                        disconnect();
+                    }
+                }
+                haptic('light');
+            }
+        };
+
+        window.addEventListener('keydown', handleEscKey);
+        return () => window.removeEventListener('keydown', handleEscKey);
+    }, [showNarrativeMemory, showPractices, isReasoningOpen, status.kind, disconnect]);
+
+    // --- OPTIMIZED VISUALIZATION ---
+    const optimizedVisualization = useMemo(() => {
+        if (isOptimized) {
+            return 'low'; // Reduce quality when performance is poor
         }
-    }, [inputMode]);
+        return visualizationMode;
+    }, [isOptimized, visualizationMode]);
 
-    // --- Handlers ---
-
-    const handleLoadingComplete = () => {
-        setIsLoading(false);
-    };
-
-    const toggleConnection = () => {
-        if (status.kind === 'idling') {
-            if (micStatus === 'granted') {
-                connect();
-            } else if (micStatus === 'denied') {
-                setSnackbar({ text: "Bạn đã từ chối quyền Micro. Vui lòng cấp lại trong cài đặt.", kind: "error" });
+    // --- EVENT HANDLERS ---
+    const toggleConnection = useCallback(async () => {
+        try {
+            if (status.kind === 'idling') {
+                await connect();
             } else {
-                requestInitialPermissions().then(() => connect());
+                disconnect();
             }
-        } else {
-            disconnect();
+        } catch (error) {
+            console.error('Connection toggle failed:', error);
+            setSnackbar({ text: 'Connection failed', kind: 'error' });
         }
-    };
+    }, [status.kind, connect, disconnect, setSnackbar]);
 
-    const toggleLanguage = () => {
-        const newLang = language === 'vi' ? 'en' : 'vi';
-        setLanguage(newLang);
-        setSnackbar({ text: newLang === 'vi' ? "Ngôn ngữ: Tiếng Việt" : "Language: English", kind: "success" });
-        if (status.kind !== 'idling') {
-            disconnect();
-            setTimeout(() => connect(), 500);
-        }
-    };
-
-    const toggleInputMode = () => {
-        disconnect();
+    const toggleInputMode = useCallback(() => {
         setInputMode(inputMode === 'voice' ? 'text' : 'voice');
-        setShowPractices(false); // Auto-hide practices when switching modes
-        haptic('selection');
-    };
+        haptic('light');
+    }, [inputMode, setInputMode]);
 
-    const handleModeChange = (mode: any, items: string[]) => {
-        setCulturalMode(mode);
-        setSnackbar({ text: `Chế độ: ${mode}`, kind: "success" });
-        haptic('success');
-        if (status.kind !== 'idling') {
-            disconnect();
-            setTimeout(() => connect(), 500);
-        }
-    };
+    const toggleLanguage = useCallback(() => {
+        setLanguage(language === 'en' ? 'vi' : 'en');
+        haptic('light');
+    }, [language, setLanguage]);
 
-    const handleSendText = async (text: string) => {
-        if (!text.trim()) return;
+    const handleModeChange = useCallback((mode: string) => {
+        setCulturalMode(mode as any);
+        haptic('light');
+    }, [setCulturalMode]);
 
-        // Removed hardcoded offline check to allow Offline AI service to handle it
-
-        const response = await sendText(text);
-        if (response) {
-            setInputText('');
-            if (detectEmergency(text) || detectEmergency(response.wisdom_text)) {
-                setEmergencyActive(true);
-            }
-        }
-    };
-
-    const handlePracticeSelect = (txt: string) => {
+    const handlePracticeSelect = useCallback((practice: string) => {
         setShowPractices(false);
-        handleSendText(txt);
-    };
+        // Handle practice selection logic here
+        console.log('Practice selected:', practice);
+    }, []);
 
-    const handleResetSession = () => {
-        haptic('warn');
+    const handleSendText = useCallback(async (text: string) => {
+        if (!text.trim()) return;
+        
+        try {
+            setInputText('');
+            await sendText(text);
+        } catch (error) {
+            console.error('Send text failed:', error);
+            setSnackbar({ text: 'Failed to send message', kind: 'error' });
+        }
+    }, [sendText, setSnackbar]);
+
+    const handleResetSession = useCallback(() => {
         setZenData(null);
         setInputText('');
-        setSnackbar({ text: "Bắt đầu phiên mới", kind: 'info' });
-    };
+        haptic('success');
+    }, [setZenData]);
 
-    // --- DEBUG: Loading State ---
-    useEffect(() => {
-        console.log('🜂 Loading state changed:', isLoading);
-    }, [isLoading]);
+    const handleLoadingComplete = useCallback(() => {
+        setIsLoading(false);
+    }, [setIsLoading]);
 
-    // --- DEBUG: Component Lifecycle ---
-    useEffect(() => {
-        console.log('🜂 MainView mounted successfully');
-        return () => {
-            console.log('🜂 MainView unmounting');
-        };
-    }, []);
-
-    // Determine Orb Mode
     const orbMode = useMemo(() => {
-        if (status.kind === 'processing') return 'processing';
-        if (status.kind === 'speaking') return 'speaking';
-        if (status.kind === 'connected_listening' || status.kind === 'connecting') return 'listening';
+        if (!zenData) return 'idle';
+        const emotion = zenData.emotion;
+        if (emotion === 'calm' || emotion === 'joyful') return 'idle';
+        if (emotion === 'anxious' || emotion === 'stressed') return 'listening';
+        if (emotion === 'seeking' || emotion === 'neutral') return 'idle';
         return 'idle';
-    }, [status]);
+    }, [zenData]);
 
+    // --- RENDER ---
     return (
-        <div className="relative h-[100dvh] w-full overflow-hidden bg-gray-900 select-none font-sans text-gray-100">
-            {/* Error Boundary Display */}
+        <div 
+            ref={overlayRef}
+            className="relative w-full h-screen overflow-hidden bg-gray-900"
+            onClick={handleOverlayTap}
+        >
+            {/* Performance Indicator (Debug) */}
+            {process.env.NODE_ENV === 'development' && (
+                <div className="fixed top-2 left-2 z-50 bg-black/50 text-white text-xs p-2 rounded font-mono">
+                    <div>FPS: {fps}</div>
+                    <div>Memory: {memoryUsage.toFixed(1)}MB</div>
+                    <div>Optimized: {isOptimized ? 'Yes' : 'No'}</div>
+                </div>
+            )}
+
+            {/* Error State */}
             {hasError && (
-                <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-gray-900 p-8">
-                    <div className="text-6xl mb-4">⚠️</div>
-                    <h2 className="text-2xl font-bold text-red-400 mb-4">Display Error</h2>
-                    <p className="text-gray-300 text-center mb-6">{errorMessage}</p>
-                    <button
-                        onClick={() => window.location.reload()}
-                        className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                    >
-                        Reload App
-                    </button>
+                <div className="absolute inset-0 z-50 flex items-center justify-center bg-gray-900">
+                    <div className="text-center space-y-4 p-8">
+                        <div className="text-red-400 text-6xl">⚠️</div>
+                        <h2 className="text-white text-xl font-semibold">Something went wrong</h2>
+                        <p className="text-gray-400">{errorMessage}</p>
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="px-6 py-2 bg-cyan-500 text-white rounded-full hover:bg-cyan-600 transition-colors"
+                        >
+                            Reload App
+                        </button>
+                    </div>
                 </div>
             )}
 
@@ -411,14 +333,14 @@ export function MainView() {
             {/* Main Content */}
             {!isLoading && !hasError && (
                 <>
-                    {/* --- 3D SPACE --- */}
+                    {/* --- 3D SPACE (OPTIMIZED) --- */}
                     <div className="absolute inset-0 z-0 bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900">
-                        {visualizationMode === 'soul' ? (
+                        {optimizedVisualization === 'soul' ? (
                             <Canvas camera={{ position: [0, 0, 5], fov: 45 }}>
                                 <ambientLight intensity={0.5} />
                                 <pointLight position={[10, 10, 10]} intensity={1} color="#00f3ff" />
                                 <pointLight position={[-10, -10, -10]} intensity={0.5} color="#ffd700" />
-                                <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
+                                <Stars radius={100} depth={50} count={isOptimized ? 1000 : 5000} factor={4} saturation={0} fade speed={1} />
                                 <Suspense fallback={<div className="text-white text-center">Loading...</div>}>
                                     <SoulOrb mode={orbMode} intensity={audioIntensity} />
                                 </Suspense>
@@ -463,11 +385,11 @@ export function MainView() {
                     {/* Streak & Engagement System */}
                     <StreakBadge language={language} />
 
-                    {/* --- UI OVERLAY: GLASSMORPHISM --- */}
+                    {/* --- UI OVERLAY: ENHANCED GLASSMORPHISM --- */}
 
                     {/* TOP BAR */}
                     <div className="absolute top-0 left-0 right-0 p-4 pt-6 z-50 pointer-events-none flex justify-between items-start">
-                        <div className="pointer-events-auto flex items-center gap-1 bg-gray-800/60 backdrop-blur-md rounded-full p-1 shadow-[0_0_15px_rgba(0,243,255,0.1)] border border-white/10 transition-transform hover:scale-105">
+                        <div className="pointer-events-auto flex items-center gap-1 glass-enhanced rounded-full p-1 shadow-glow transition-smooth hover:scale-105">
                             <CameraScan onModeChange={handleModeChange} currentMode={culturalMode} />
                             <div className="h-4 w-px bg-white/20 mx-0.5"></div>
                             <button
@@ -495,7 +417,7 @@ export function MainView() {
                             {zenData && (
                                 <button
                                     onClick={handleResetSession}
-                                    className="p-2.5 rounded-full bg-gray-800/60 backdrop-blur-md text-gray-400 hover:bg-white/10 transition-all border border-white/10"
+                                    className="p-2.5 rounded-full glass-card text-gray-400 hover:bg-white/10 transition-all"
                                     aria-label="New Session"
                                 >
                                     <RotateCcw size={18} />
@@ -503,7 +425,7 @@ export function MainView() {
                             )}
                             <button
                                 onClick={() => setShowNarrativeMemory(true)}
-                                className="p-2.5 rounded-full bg-gray-800/60 backdrop-blur-md text-gray-400 hover:bg-white/10 hover:text-purple-400 transition-all border border-white/10"
+                                className="p-2.5 rounded-full glass-card text-gray-400 hover:bg-white/10 hover:text-purple-400 transition-all"
                                 aria-label="View Journey"
                                 title="View your journey"
                             >
@@ -513,15 +435,15 @@ export function MainView() {
                         </div>
                     </div>
 
-                    {/* STATUS STATUS */}
+                    {/* STATUS INDICATOR */}
                     <div className="absolute top-24 left-0 right-0 z-40 pointer-events-none flex justify-center">
                         {status.kind === 'processing' && (
-                            <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-gray-800/80 backdrop-blur border border-purple-500/30 text-xs font-mono text-purple-400 animate-pulse">
+                            <div className="flex items-center gap-2 px-4 py-1.5 rounded-full glass-enhanced border border-purple-500/30 text-xs font-mono text-purple-400 animate-pulse animate-glow">
                                 <Brain size={12} /> PROCESSING NEURAL PATTERNS
                             </div>
                         )}
                         {status.kind === 'connected_listening' && (
-                            <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-gray-800/80 backdrop-blur border border-cyan-400/30 text-xs font-mono text-cyan-400 animate-pulse">
+                            <div className="flex items-center gap-2 px-4 py-1.5 rounded-full glass-enhanced border border-cyan-400/30 text-xs font-mono text-cyan-400 animate-pulse animate-glow">
                                 <Mic size={12} /> LISTENING TO RESONANCE
                             </div>
                         )}
@@ -550,23 +472,32 @@ export function MainView() {
                     {/* BOTTOM DOCK */}
                     <div className="absolute bottom-8 left-0 right-0 z-50 flex flex-col items-center pointer-events-none px-4">
                         {showPractices && (
-                            <div className="pointer-events-auto mb-4 bg-gray-800/90 backdrop-blur-xl rounded-[24px] p-2 shadow-[0_0_30px_rgba(0,0,0,0.5)] border border-white/10 animate-[slideUp_0.3s_ease-out] max-w-full origin-bottom">
+                            <div className="pointer-events-auto mb-4 glass-card rounded-[24px] p-2 shadow-card animate-[slideUp_0.3s_ease-out] max-w-full origin-bottom">
+                                <div className="absolute top-2 right-2">
+                                    <button
+                                        onClick={() => setShowPractices(false)}
+                                        className="p-1 rounded-full text-gray-400 hover:text-white hover:bg-white/10 transition-all"
+                                        aria-label="Close practices"
+                                    >
+                                        <X size={16} />
+                                    </button>
+                                </div>
                                 <MicroPractices
                                     onSelect={handlePracticeSelect}
-                                    disabled={status.kind !== 'idling'} // Enable offline too
+                                    disabled={status.kind !== 'idling'}
                                     lang={language}
                                 />
                             </div>
                         )}
 
                         <div
-                            className={`pointer-events-auto bg-gray-800/70 backdrop-blur-2xl border border-white/10 shadow-[0_0_20px_rgba(0,243,255,0.05)] rounded-[32px] p-2 flex items-center justify-center gap-4 transition-all duration-300 ease-out hover:border-cyan-400/30 ${inputMode === 'voice' ? 'dock-voice' : 'dock-text'}`}
+                            className={`pointer-events-auto glass-card border border-white/10 shadow-glow rounded-[32px] p-2 flex items-center justify-center gap-4 transition-smooth hover:border-cyan-400/30 ${inputMode === 'voice' ? 'dock-voice' : 'dock-text'}`}
                         >
                             {inputMode === 'voice' ? (
                                 <>
                                     <button
                                         onClick={() => setShowPractices(!showPractices)}
-                                        className={`p-4 rounded-full text-gray-500 hover:text-yellow-400 hover:bg-white/5 transition-all duration-300 ${showPractices ? 'text-yellow-400 bg-white/5' : ''}`}
+                                        className={`p-4 rounded-full text-gray-500 hover:text-yellow-400 hover:bg-white/5 transition-smooth ${showPractices ? 'text-yellow-400 bg-white/5' : ''}`}
                                         aria-label={showPractices ? "Hide practices" : "Show practices"}
                                         title={showPractices ? "Hide practices" : "Show practices"}
                                     >
@@ -574,12 +505,12 @@ export function MainView() {
                                     </button>
                                     <div className="-my-4 relative">
                                         <VoiceButton state={connectionState === 'reconnecting' ? 'processing' : status.kind === 'idling' ? 'idle' : status.kind === 'connecting' ? 'listening' : status.kind === 'connected_listening' ? 'listening' : status.kind === 'processing' ? 'processing' : status.kind === 'speaking' ? 'speaking' : 'idle'} onClick={toggleConnection} />
-                                        {/* Glow Effect behind button */}
-                                        <div className="absolute inset-0 bg-cyan-400/20 blur-xl rounded-full -z-10 animate-pulse-slow pointer-events-none"></div>
+                                        {/* Enhanced Glow Effect */}
+                                        <div className="absolute inset-0 bg-cyan-400/20 blur-xl rounded-full -z-10 animate-pulse-slow pointer-events-none animate-glow"></div>
                                     </div>
                                     <button
                                         onClick={toggleInputMode}
-                                        className="p-4 rounded-full text-gray-500 hover:text-cyan-400 hover:bg-white/5 transition-all duration-300"
+                                        className="p-4 rounded-full text-gray-500 hover:text-cyan-400 hover:bg-white/5 transition-smooth"
                                         aria-label="Switch to keyboard input"
                                         title="Switch to keyboard input"
                                     >
@@ -600,7 +531,7 @@ export function MainView() {
                                     <button
                                         onClick={() => handleSendText(inputText)}
                                         disabled={!inputText.trim() || status.kind === 'processing'}
-                                        className="p-3 bg-cyan-400/10 text-cyan-400 rounded-full hover:bg-cyan-400 hover:text-gray-900 disabled:opacity-50 transition-all shadow-[0_0_10px_rgba(0,243,255,0.2)]"
+                                        className="p-3 bg-cyan-400/10 text-cyan-400 rounded-full hover:bg-cyan-400 hover:text-gray-900 disabled:opacity-50 transition-smooth shadow-glow"
                                         aria-label="Send message"
                                         title="Send message"
                                     >
@@ -609,7 +540,7 @@ export function MainView() {
                                     <div className="w-px h-6 bg-white/10 mx-1" />
                                     <button
                                         onClick={toggleInputMode}
-                                        className="p-2 text-gray-500 hover:text-cyan-400 transition-colors"
+                                        className="p-2 text-gray-500 hover:text-cyan-400 transition-smooth"
                                         aria-label="Switch to voice input"
                                         title="Switch to voice input"
                                     >

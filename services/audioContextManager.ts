@@ -9,7 +9,7 @@ class AudioContextManager {
   private refCount = 0;
   private readonly maxRefCount = 10; // Prevent memory leaks
 
-  private constructor() {}
+  private constructor() { }
 
   static getInstance(): AudioContextManager {
     if (!AudioContextManager.instance) {
@@ -33,7 +33,7 @@ class AudioContextManager {
     // Initialize new context
     this.isInitializing = true;
     this.initPromise = this.initializeContext();
-    
+
     try {
       this.audioContext = await this.initPromise;
       this.refCount = 1;
@@ -48,7 +48,7 @@ class AudioContextManager {
     try {
       // Create new audio context with optimal settings
       const context = new (window.AudioContext || (window as any).webkitAudioContext)();
-      
+
       // Resume context if suspended (common in mobile browsers)
       if (context.state === 'suspended') {
         await context.resume();
@@ -75,6 +75,9 @@ class AudioContextManager {
     }
   }
 
+  // Track pending close to prevent race conditions
+  private pendingCloseId: number = 0;
+
   releaseContext(): void {
     if (this.refCount > 0) {
       this.refCount--;
@@ -82,9 +85,14 @@ class AudioContextManager {
 
     // Auto-close when no longer needed and ref count is low
     if (this.refCount === 0 && this.audioContext && this.audioContext.state !== 'closed') {
+      // Capture current close ID to prevent stale timeouts from closing new contexts
+      const closeId = ++this.pendingCloseId;
+
       // Delay closure to allow for rapid reconnection
       setTimeout(() => {
-        if (this.refCount === 0 && this.audioContext && this.audioContext!.state !== 'closed') {
+        // Only close if this is still the pending close AND refCount is still 0
+        if (closeId === this.pendingCloseId && this.refCount === 0 &&
+          this.audioContext && this.audioContext.state !== 'closed') {
           this.closeContext();
         }
       }, 1000);

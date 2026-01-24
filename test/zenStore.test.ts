@@ -29,45 +29,49 @@ describe('ZenStore State Machine', () => {
     it('prevents invalid transition idling -> processing', () => {
         const store = useZenStore.getState();
         // Mock console.error to verify it's called
-        const mockError = vi.spyOn(console, 'error').mockImplementation(() => {});
-        const mockWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-        
+        const mockError = vi.spyOn(console, 'error').mockImplementation(() => { });
+        const mockWarn = vi.spyOn(console, 'warn').mockImplementation(() => { });
+
         // Reset store to idling state first
         useZenStore.setState({ status: { kind: 'idling' } });
-        
+
         // Since we now allow idling -> processing for text mode, this should be allowed
         store.transitionTo({ kind: 'processing' });
         expect(useZenStore.getState().status).toEqual({ kind: 'processing' });
-        
+
         // No error should be logged since this transition is now allowed
         expect(mockError).not.toHaveBeenCalled();
         expect(mockWarn).not.toHaveBeenCalled();
-        
+
         mockError.mockRestore();
         mockWarn.mockRestore();
     });
 
     it('prevents truly invalid transition processing -> connecting', () => {
         const store = useZenStore.getState();
-        // Mock console.error to verify it's called
-        const mockError = vi.spyOn(console, 'error').mockImplementation(() => {});
-        const mockWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-        
+        // Mock console to verify logging
+        const mockError = vi.spyOn(console, 'error').mockImplementation(() => { });
+        const mockWarn = vi.spyOn(console, 'warn').mockImplementation(() => { });
+
         // Set to processing state first
         useZenStore.setState({ status: { kind: 'processing' } });
-        
-        // Try invalid transition
+
+        // Try invalid transition - should be BLOCKED
         store.transitionTo({ kind: 'connecting' });
-        expect(useZenStore.getState().status).toEqual({ kind: 'connecting' });
-        
-        // Error should be logged for truly invalid transition
+
+        // State should remain 'processing' because transition is invalid
+        expect(useZenStore.getState().status).toEqual({ kind: 'processing' });
+
+        // Error should be logged for invalid transition
         expect(mockError).toHaveBeenCalledWith(
-            expect.stringContaining('Invalid State Transition')
+            '[ZenStore] Transition failed:',
+            expect.stringContaining('Invalid transition')
         );
+        // Warning should be logged about blocking
         expect(mockWarn).toHaveBeenCalledWith(
-            expect.stringContaining('Allowing invalid transition in test environment')
+            expect.stringContaining('Invalid transition blocked')
         );
-        
+
         mockError.mockRestore();
         mockWarn.mockRestore();
     });
