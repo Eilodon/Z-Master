@@ -21,6 +21,8 @@ interface UIState {
   isLoading: boolean;
   showBreathing: boolean;
   emergencyActive: boolean;
+  visualizationMode: 'soul' | 'orb'; // soul = SoulOrb (default), orb = OrbViz (premium)
+  aiMode: 'online' | 'offline'; // online = Gemini API, offline = Gemini Nano
 
   setCulturalMode: (mode: CulturalMode) => void;
   setLanguage: (lang: Language) => void;
@@ -29,6 +31,8 @@ interface UIState {
   setIsLoading: (loading: boolean) => void;
   setShowBreathing: (show: boolean) => void;
   setEmergencyActive: (active: boolean) => void;
+  setVisualizationMode: (mode: 'soul' | 'orb') => void;
+  setAiMode: (mode: 'online' | 'offline') => void;
 }
 
 interface ZenSessionState {
@@ -67,6 +71,8 @@ export const useUIStore = create<UIState>((set) => ({
   isLoading: true,
   showBreathing: false,
   emergencyActive: false,
+  visualizationMode: 'soul',
+  aiMode: 'online', // Default to online mode
 
   setCulturalMode: (mode) => set({ culturalMode: mode }),
   setLanguage: (lang) => set({ language: lang }),
@@ -75,6 +81,8 @@ export const useUIStore = create<UIState>((set) => ({
   setIsLoading: (loading) => set({ isLoading: loading }),
   setShowBreathing: (show) => set({ showBreathing: show }),
   setEmergencyActive: (active) => set({ emergencyActive: active }),
+  setVisualizationMode: (mode) => set({ visualizationMode: mode }),
+  setAiMode: (mode) => set({ aiMode: mode }),
 }));
 
 export const useZenStore = create<ZenSessionState>((set, get) => ({

@@ -107,11 +107,22 @@ export class RobustVoiceDetector {
   private readonly MIN_ENERGY_THRESHOLD = 0.01;
   private readonly MAX_ENERGY_THRESHOLD = 0.5;
 
+  // DSP Filter State (High-pass at 300Hz to kill rumble noise)
+  private a1 = 0;
+  private x1 = 0;
+  private y1 = 0;
+
   constructor(sampleRate: number) {
     this.sampleRate = sampleRate;
     this.energyThreshold = 0.05; // Initial threshold
     this.noiseFloor = 0.001;
     this.adaptationRate = 0.1;
+
+    // Calculate high-pass filter coefficients for 300Hz cutoff
+    // This eliminates motorcycle/AC rumble common in VN environments
+    const rc = 1.0 / (300 * 2 * Math.PI);
+    const dt = 1.0 / sampleRate;
+    this.a1 = rc / (rc + dt);
   }
 
   /**
@@ -123,7 +134,7 @@ export class RobustVoiceDetector {
 
     // Calculate RMS energy
     const energy = this.calculateRMS(audioData);
-    
+
     // Update noise floor estimation (slow adaptation)
     if (energy < this.energyThreshold) {
       this.noiseFloor = this.noiseFloor * 0.99 + energy * 0.01;
@@ -134,7 +145,7 @@ export class RobustVoiceDetector {
 
     // Voice activity detection with hysteresis
     const isVoiceActive = energy > this.energyThreshold;
-    
+
     if (isVoiceActive) {
       this.voiceFrames++;
       this.silenceFrames = 0;
@@ -151,10 +162,23 @@ export class RobustVoiceDetector {
 
   private calculateRMS(audioData: Float32Array): number {
     let sum = 0;
+    // Apply high-pass filter to each sample before RMS calculation
     for (let i = 0; i < audioData.length; i++) {
-      sum += audioData[i] * audioData[i];
+      const filtered = this.applyHighPass(audioData[i]);
+      sum += filtered * filtered;
     }
     return Math.sqrt(sum / audioData.length);
+  }
+
+  /**
+   * High-pass filter at 300Hz to eliminate rumble noise
+   * Filter equation: y[i] = α * (y[i-1] + x[i] - x[i-1])
+   */
+  private applyHighPass(sample: number): number {
+    const y = this.a1 * (this.y1 + sample - this.x1);
+    this.x1 = sample;
+    this.y1 = y;
+    return y;
   }
 
   private adaptThreshold(currentEnergy: number): void {

@@ -86,7 +86,7 @@ export class VaultService {
 
       // 2. Derive Wrapping Key (Must match setup)
       const wrappingKey = await this.deriveKeyFromPin(pin, salt, 'wrap');
-      
+
       // 3. Derive Encryption Key for this session
       const encryptKey = await this.deriveKeyFromPin(pin, salt, 'encrypt');
 
@@ -124,7 +124,7 @@ export class VaultService {
       if (this.keyMaterial) {
         const view = new Uint8Array(this.keyMaterial);
         view.fill(0);
-        crypto.subtle.importKey('raw', view, { name: 'AES-GCM' }, false, []).catch(() => {});
+        crypto.subtle.importKey('raw', view, { name: 'AES-GCM' }, false, []).catch(() => { });
       }
       this.masterKey = null;
       this.keyMaterial = null;
@@ -136,7 +136,7 @@ export class VaultService {
 
   static async encrypt(data: any): Promise<{ iv: Uint8Array, cipher: ArrayBuffer }> {
     if (!this.masterKey) throw new Error("VAULT_LOCKED");
-    
+
     const iv = window.crypto.getRandomValues(new Uint8Array(IV_LEN));
     const encoded = new TextEncoder().encode(JSON.stringify(data));
 
@@ -170,18 +170,21 @@ export class VaultService {
 
   private static async deriveKeyFromPin(pin: string, salt: Uint8Array, purpose: 'wrap' | 'encrypt'): Promise<CryptoKey> {
     const encoder = new TextEncoder();
+    const rawKeyData = encoder.encode(pin + purpose);
+
+    // Store key material for zeroization
+    if (purpose === 'encrypt') {
+      // Create a copy for zeroization
+      this.keyMaterial = rawKeyData.buffer.slice(0);
+    }
+
     const baseKeyMaterial = await window.crypto.subtle.importKey(
       'raw',
-      encoder.encode(pin + purpose), // Purpose separation
+      rawKeyData, // Purpose separation
       { name: 'PBKDF2' },
       false,
       ['deriveKey']
     );
-
-    // Store key material for zeroization
-    if (purpose === 'encrypt') {
-      this.keyMaterial = await window.crypto.subtle.exportKey('raw', baseKeyMaterial);
-    }
 
     // Create new Uint8Array copy to avoid SharedArrayBuffer issues
     const saltCopy = new Uint8Array(salt);

@@ -5,7 +5,7 @@ describe('Audio Manager', () => {
     it('defines AUDIO_WORKLET_CODE', () => {
         expect(typeof AUDIO_WORKLET_CODE).toBe('string');
         expect(AUDIO_WORKLET_CODE.length).toBeGreaterThan(0);
-        expect(AUDIO_WORKLET_CODE).toContain('class VadAudioWorklet');
+        expect(AUDIO_WORKLET_CODE).toContain('class ZenAudioProcessor');
     });
 
     it('converts float32 to 16bit PCM', () => {
