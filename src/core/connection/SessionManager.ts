@@ -106,15 +106,15 @@ class SessionManager {
             }
 
             // DB Logging Logic
-            if (data.emotion && data.quantum_metrics && data.reasoning_steps) {
+            if (data.emotion && data.mindfulness_metrics && data.reasoning_steps) {
                 if (data.reasoning_steps[0] !== 'Offline Mode') {
                     const newEntry: ConversationEntry = {
                         id: Date.now().toString(),
                         timestamp: Date.now(),
                         emotion: data.emotion,
-                        quantum_metrics: data.quantum_metrics!,
+                        mindfulness_metrics: data.mindfulness_metrics!,
                         stage: data.awareness_stage,
-                        consciousness_dimensions: data.consciousness_dimensions
+                        psychological_dimensions: data.psychological_dimensions
                     };
 
                     // Debounce: Check timestamp of last history item

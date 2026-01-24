@@ -1,1 +1,279 @@
-// UI Business Logic Service\n// Extracts business logic from UI components\n\nimport { stateMachine } from '../core/state/StateMachine';\nimport { sessionService } from '../core/connection/SessionService';\nimport { ZenResponse, CulturalMode, Language, AppState } from '../../types';\nimport { haptic } from '../../utils/designSystem';\nimport { detectEmergency } from '../../data/emergencyKeywords';\n\nexport interface UIAction {\n  type: 'CONNECT' | 'DISCONNECT' | 'SEND_TEXT' | 'TOGGLE_LANGUAGE' | 'TOGGLE_INPUT_MODE' | 'CHANGE_MODE' | 'RESET_SESSION';\n  payload?: any;\n}\n\nexport interface UIState {\n  canConnect: boolean;\n  canDisconnect: boolean;\n  canSendText: boolean;\n  isProcessing: boolean;\n  isListening: boolean;\n  isSpeaking: boolean;\n  currentLanguage: Language;\n  currentInputMode: 'voice' | 'text';\n  currentCulturalMode: CulturalMode;\n}\n\nexport class UIBusinessLogic {\n  private static instance: UIBusinessLogic;\n  private eventListeners: Set<(state: UIState) => void> = new Set();\n  private currentState: UIState;\n\n  private constructor() {\n    this.currentState = this.initializeState();\n    this.setupStateMachineListener();\n  }\n\n  static getInstance(): UIBusinessLogic {\n    if (!UIBusinessLogic.instance) {\n      UIBusinessLogic.instance = new UIBusinessLogic();\n    }\n    return UIBusinessLogic.instance;\n  }\n\n  private initializeState(): UIState {\n    const machineState = stateMachine.getCurrentState();\n    return {\n      canConnect: machineState.kind === 'idling',\n      canDisconnect: machineState.kind !== 'idling',\n      canSendText: machineState.kind === 'idling',\n      isProcessing: machineState.kind === 'processing',\n      isListening: machineState.kind === 'connected_listening',\n      isSpeaking: machineState.kind === 'speaking',\n      currentLanguage: 'vi', // Default, would come from UI store\n      currentInputMode: 'voice', // Default, would come from UI store\n      currentCulturalMode: 'Universal' // Default, would come from UI store\n    };\n  }\n\n  private setupStateMachineListener(): void {\n    stateMachine.subscribe((event) => {\n      if (event.type === 'state:change') {\n        this.updateUIState();\n      }\n    });\n  }\n\n  private updateUIState(): void {\n    const machineState = stateMachine.getCurrentState();\n    const newState: UIState = {\n      ...this.currentState,\n      canConnect: machineState.kind === 'idling',\n      canDisconnect: machineState.kind !== 'idling',\n      canSendText: machineState.kind === 'idling',\n      isProcessing: machineState.kind === 'processing',\n      isListening: machineState.kind === 'connected_listening',\n      isSpeaking: machineState.kind === 'speaking'\n    };\n\n    if (JSON.stringify(newState) !== JSON.stringify(this.currentState)) {\n      this.currentState = newState;\n      this.notifyListeners();\n    }\n  }\n\n  private notifyListeners(): void {\n    this.eventListeners.forEach(listener => {\n      try {\n        listener(this.currentState);\n      } catch (error) {\n        console.error('[UIBusinessLogic] Listener error:', error);\n      }\n    });\n  }\n\n  // Public API for UI components\n  subscribe(listener: (state: UIState) => void): () => void {\n    this.eventListeners.add(listener);\n    listener(this.currentState); // Send current state immediately\n    return () => this.eventListeners.delete(listener);\n  }\n\n  getCurrentState(): UIState {\n    return { ...this.currentState };\n  }\n\n  // Action handlers\n  async handleAction(action: UIAction): Promise<any> {\n    switch (action.type) {\n      case 'CONNECT':\n        return this.handleConnect(action.payload);\n      case 'DISCONNECT':\n        return this.handleDisconnect();\n      case 'SEND_TEXT':\n        return this.handleSendText(action.payload);\n      case 'TOGGLE_LANGUAGE':\n        return this.handleToggleLanguage();\n      case 'TOGGLE_INPUT_MODE':\n        return this.handleToggleInputMode();\n      case 'CHANGE_MODE':\n        return this.handleModeChange(action.payload);\n      case 'RESET_SESSION':\n        return this.handleResetSession();\n      default:\n        console.warn('[UIBusinessLogic] Unknown action:', action.type);\n        return null;\n    }\n  }\n\n  private async handleConnect(micStatus?: string): Promise<AnalyserNode | null> {\n    if (micStatus === 'denied') {\n      throw new Error('MICROPHONE_DENIED');\n    }\n\n    if (micStatus === 'granted') {\n      return await sessionService.connect();\n    }\n\n    // Need to request permissions first\n    throw new Error('PERMISSION_REQUIRED');\n  }\n\n  private handleDisconnect(): void {\n    sessionService.disconnect();\n  }\n\n  private async handleSendText(text: string): Promise<ZenResponse | null> {\n    if (!text.trim()) {\n      return null;\n    }\n\n    // Offline check\n    if (!navigator.onLine) {\n      return this.getOfflineResponse(text);\n    }\n\n    try {\n      const response = await sessionService.sendText(text);\n      \n      // Emergency detection\n      if (detectEmergency(text) || (response && detectEmergency(response.wisdom_text))) {\n        this.triggerEmergency();\n      }\n\n      return response;\n    } catch (error) {\n      console.error('[UIBusinessLogic] Send text failed:', error);\n      return null;\n    }\n  }\n\n  private handleToggleLanguage(): void {\n    const newLang = this.currentState.currentLanguage === 'vi' ? 'en' : 'vi';\n    this.currentState.currentLanguage = newLang;\n    \n    // Update UI store (would be injected)\n    haptic('selection');\n    \n    // Restart session if active\n    if (this.currentState.isListening || this.currentState.isSpeaking) {\n      sessionService.disconnect();\n      setTimeout(() => sessionService.connect(), 500);\n    }\n    \n    this.notifyListeners();\n  }\n\n  private handleToggleInputMode(): void {\n    const newMode = this.currentState.currentInputMode === 'voice' ? 'text' : 'voice';\n    this.currentState.currentInputMode = newMode;\n    \n    // Update UI store (would be injected)\n    haptic('selection');\n    \n    // Disconnect voice session if switching to text\n    if (newMode === 'text') {\n      sessionService.disconnect();\n    }\n    \n    this.notifyListeners();\n  }\n\n  private handleModeChange(mode: CulturalMode): void {\n    this.currentState.currentCulturalMode = mode;\n    \n    // Update UI store (would be injected)\n    haptic('success');\n    \n    // Restart session if active\n    if (this.currentState.isListening || this.currentState.isSpeaking) {\n      sessionService.disconnect();\n      setTimeout(() => sessionService.connect(), 500);\n    }\n    \n    this.notifyListeners();\n  }\n\n  private handleResetSession(): void {\n    haptic('warn');\n    sessionService.disconnect();\n    \n    // Clear session data\n    stateMachine.updateData(null);\n    \n    this.notifyListeners();\n  }\n\n  private triggerEmergency(): void {\n    stateMachine.updateData({ action: 'emergency_protocol' as any });\n  }\n\n  private getOfflineResponse(text: string): ZenResponse {\n    const lang = this.currentState.currentLanguage;\n    return {\n      emotion: 'calm',\n      wisdom_text: lang === 'vi'\n        ? \"Mạng không ổn định. Hãy quay về nương tựa nơi hơi thở.\"\n        : \"Connection lost. Return to the island of self through breathing.\",\n      wisdom_english: \"Breathing in, I calm my body.\",\n      user_transcript: text,\n      breathing: '4-7-8',\n      confidence: 1,\n      reasoning_steps: ['Offline Mode', 'Triggering Local Breathing'],\n      quantum_metrics: { coherence: 0.8, entanglement: 0.5, presence: 0.9 },\n      awareness_stage: 'mindful',\n      consciousness_dimensions: { contextual: 0.5, emotional: 0.5, cultural: 0.5, wisdom: 0.5, uncertainty: 0.5, relational: 0.5 },\n      ambient_sound: 'rain'\n    };\n  }\n\n  // Utility methods\n  canPerformAction(action: UIAction['type']): boolean {\n    switch (action) {\n      case 'CONNECT':\n        return this.currentState.canConnect;\n      case 'DISCONNECT':\n        return this.currentState.canDisconnect;\n      case 'SEND_TEXT':\n        return this.currentState.canSendText;\n      default:\n        return true;\n    }\n  }\n\n  // Get session data for UI\n  getSessionData(): ZenResponse | null {\n    return sessionService.getZenData();\n  }\n\n  getHistory(): any[] {\n    return sessionService.getHistory();\n  }\n\n  getAnalyser(): AnalyserNode | null {\n    return sessionService.getAnalyser();\n  }\n}\n\n// Export singleton instance\nexport const uiBusinessLogic = UIBusinessLogic.getInstance();
+// UI Business Logic Service
+// Extracts business logic from UI components
+
+import { stateMachine } from '../core/state/StateMachine';
+import { sessionService } from '../core/connection/SessionService';
+import { ZenResponse, CulturalMode, Language, AppState } from '../../types';
+import { haptic } from '../../utils/designSystem';
+import { detectEmergency } from '../../data/emergencyKeywords';
+
+export interface UIAction {
+  type: 'CONNECT' | 'DISCONNECT' | 'SEND_TEXT' | 'TOGGLE_LANGUAGE' | 'TOGGLE_INPUT_MODE' | 'CHANGE_MODE' | 'RESET_SESSION';
+  payload?: any;
+}
+
+export interface UIState {
+  canConnect: boolean;
+  canDisconnect: boolean;
+  canSendText: boolean;
+  isProcessing: boolean;
+  isListening: boolean;
+  isSpeaking: boolean;
+  currentLanguage: Language;
+  currentInputMode: 'voice' | 'text';
+  currentCulturalMode: CulturalMode;
+}
+
+export class UIBusinessLogic {
+  private static instance: UIBusinessLogic;
+  private eventListeners: Set<(state: UIState) => void> = new Set();
+  private currentState: UIState;
+
+  private constructor() {
+    this.currentState = this.initializeState();
+    this.setupStateMachineListener();
+  }
+
+  static getInstance(): UIBusinessLogic {
+    if (!UIBusinessLogic.instance) {
+      UIBusinessLogic.instance = new UIBusinessLogic();
+    }
+    return UIBusinessLogic.instance;
+  }
+
+  private initializeState(): UIState {
+    const machineState = stateMachine.getCurrentState();
+    return {
+      canConnect: machineState.kind === 'idling',
+      canDisconnect: machineState.kind !== 'idling',
+      canSendText: machineState.kind === 'idling',
+      isProcessing: machineState.kind === 'processing',
+      isListening: machineState.kind === 'connected_listening',
+      isSpeaking: machineState.kind === 'speaking',
+      currentLanguage: 'vi', // Default, would come from UI store
+      currentInputMode: 'voice', // Default, would come from UI store
+      currentCulturalMode: 'Universal' // Default, would come from UI store
+    };
+  }
+
+  private setupStateMachineListener(): void {
+    stateMachine.subscribe((event) => {
+      if (event.type === 'state:change') {
+        this.updateUIState();
+      }
+    });
+  }
+
+  private updateUIState(): void {
+    const machineState = stateMachine.getCurrentState();
+    const newState: UIState = {
+      ...this.currentState,
+      canConnect: machineState.kind === 'idling',
+      canDisconnect: machineState.kind !== 'idling',
+      canSendText: machineState.kind === 'idling',
+      isProcessing: machineState.kind === 'processing',
+      isListening: machineState.kind === 'connected_listening',
+      isSpeaking: machineState.kind === 'speaking'
+    };
+
+    if (JSON.stringify(newState) !== JSON.stringify(this.currentState)) {
+      this.currentState = newState;
+      this.notifyListeners();
+    }
+  }
+
+  private notifyListeners(): void {
+    this.eventListeners.forEach(listener => {
+      try {
+        listener(this.currentState);
+      } catch (error) {
+        console.error('[UIBusinessLogic] Listener error:', error);
+      }
+    });
+  }
+
+  // Public API for UI components
+  subscribe(listener: (state: UIState) => void): () => void {
+    this.eventListeners.add(listener);
+    listener(this.currentState); // Send current state immediately
+    return () => this.eventListeners.delete(listener);
+  }
+
+  getCurrentState(): UIState {
+    return { ...this.currentState };
+  }
+
+  // Action handlers
+  async handleAction(action: UIAction): Promise<any> {
+    switch (action.type) {
+      case 'CONNECT':
+        return this.handleConnect(action.payload);
+      case 'DISCONNECT':
+        return this.handleDisconnect();
+      case 'SEND_TEXT':
+        return this.handleSendText(action.payload);
+      case 'TOGGLE_LANGUAGE':
+        return this.handleToggleLanguage();
+      case 'TOGGLE_INPUT_MODE':
+        return this.handleToggleInputMode();
+      case 'CHANGE_MODE':
+        return this.handleModeChange(action.payload);
+      case 'RESET_SESSION':
+        return this.handleResetSession();
+      default:
+        console.warn('[UIBusinessLogic] Unknown action:', action.type);
+        return null;
+    }
+  }
+
+  private async handleConnect(micStatus?: string): Promise<AnalyserNode | null> {
+    if (micStatus === 'denied') {
+      throw new Error('MICROPHONE_DENIED');
+    }
+
+    if (micStatus === 'granted') {
+      return await sessionService.connect();
+    }
+
+    // Need to request permissions first
+    throw new Error('PERMISSION_REQUIRED');
+  }
+
+  private handleDisconnect(): void {
+    sessionService.disconnect();
+  }
+
+  private async handleSendText(text: string): Promise<ZenResponse | null> {
+    if (!text.trim()) {
+      return null;
+    }
+
+    // Offline check
+    if (!navigator.onLine) {
+      return this.getOfflineResponse(text);
+    }
+
+    try {
+      const response = await sessionService.sendText(text);
+      
+      // Emergency detection
+      if (detectEmergency(text) || (response && detectEmergency(response.wisdom_text))) {
+        this.triggerEmergency();
+      }
+
+      return response;
+    } catch (error) {
+      console.error('[UIBusinessLogic] Send text failed:', error);
+      return null;
+    }
+  }
+
+  private handleToggleLanguage(): void {
+    const newLang = this.currentState.currentLanguage === 'vi' ? 'en' : 'vi';
+    this.currentState.currentLanguage = newLang;
+    
+    // Update UI store (would be injected)
+    haptic('selection');
+    
+    // Restart session if active
+    if (this.currentState.isListening || this.currentState.isSpeaking) {
+      sessionService.disconnect();
+      setTimeout(() => sessionService.connect(), 500);
+    }
+    
+    this.notifyListeners();
+  }
+
+  private handleToggleInputMode(): void {
+    const newMode = this.currentState.currentInputMode === 'voice' ? 'text' : 'voice';
+    this.currentState.currentInputMode = newMode;
+    
+    // Update UI store (would be injected)
+    haptic('selection');
+    
+    // Disconnect voice session if switching to text
+    if (newMode === 'text') {
+      sessionService.disconnect();
+    }
+    
+    this.notifyListeners();
+  }
+
+  private handleModeChange(mode: CulturalMode): void {
+    this.currentState.currentCulturalMode = mode;
+    
+    // Update UI store (would be injected)
+    haptic('success');
+    
+    // Restart session if active
+    if (this.currentState.isListening || this.currentState.isSpeaking) {
+      sessionService.disconnect();
+      setTimeout(() => sessionService.connect(), 500);
+    }
+    
+    this.notifyListeners();
+  }
+
+  private handleResetSession(): void {
+    haptic('warn');
+    sessionService.disconnect();
+    
+    // Clear session data
+    stateMachine.updateData(null);
+    
+    this.notifyListeners();
+  }
+
+  private triggerEmergency(): void {
+    stateMachine.updateData({ action: 'emergency_protocol' as any });
+  }
+
+  private getOfflineResponse(text: string): ZenResponse {
+    const lang = this.currentState.currentLanguage;
+    return {
+      emotion: 'calm',
+      wisdom_text: lang === 'vi'
+        ? \"Mạng không ổn định. Hãy quay về nương tựa nơi hơi thở.\"
+        : \"Connection lost. Return to the island of self through breathing.\",
+      wisdom_english: \"Breathing in, I calm my body.\",
+      user_transcript: text,
+      breathing: '4-7-8',
+      confidence: 1,
+      reasoning_steps: ['Offline Mode', 'Triggering Local Breathing'],
+      mindfulness_metrics: { attention_stability: 0.8, emotional_regulation: 0.5, present_moment_awareness: 0.9 },
+      awareness_stage: 'mindful',
+      psychological_dimensions: { contextual: 0.5, emotional: 0.5, cultural: 0.5, wisdom: 0.5, acceptance: 0.5, relational: 0.5 },
+      ambient_sound: 'rain'
+    };
+  }
+
+  // Utility methods
+  canPerformAction(action: UIAction['type']): boolean {
+    switch (action) {
+      case 'CONNECT':
+        return this.currentState.canConnect;
+      case 'DISCONNECT':
+        return this.currentState.canDisconnect;
+      case 'SEND_TEXT':
+        return this.currentState.canSendText;
+      default:
+        return true;
+    }
+  }
+
+  // Get session data for UI
+  getSessionData(): ZenResponse | null {
+    return sessionService.getZenData();
+  }
+
+  getHistory(): any[] {
+    return sessionService.getHistory();
+  }
+
+  getAnalyser(): AnalyserNode | null {
+    return sessionService.getAnalyser();
+  }
+}
+
+// Export singleton instance
+export const uiBusinessLogic = UIBusinessLogic.getInstance();

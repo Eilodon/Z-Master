@@ -15,6 +15,7 @@ import { EmergencyProtocol } from '../../components/EmergencyProtocol';
 import { HistoryPanel } from '../../components/HistoryPanel';
 import { LoadingScreen } from '../../components/LoadingScreen';
 import { MicroPractices } from '../../components/MicroPractices';
+import { PHQ4Tracker } from '../../components/PHQ4Tracker';
 import { ZenResponse } from '../../types';
 import { detectEmergency } from '../../data/emergencyKeywords';
 import { Keyboard, Mic, Languages, SendHorizontal, Brain, Sparkles, Wifi, WifiOff, RotateCcw, Eye } from 'lucide-react';
@@ -308,6 +309,9 @@ export function MainView() {
                             disconnect();
                         }}
                     />
+
+                    {/* PHQ-4 Clinical Assessment Tracker */}
+                    <PHQ4Tracker language={language} />
 
                     {/* --- UI OVERLAY: GLASSMORPHISM --- */}
 

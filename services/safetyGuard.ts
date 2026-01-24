@@ -70,13 +70,13 @@ export class SafetyGuard {
     return {
       emotion: 'seeking',
       wisdom_text: "Thầy cảm nhận được nỗi nặng lòng của con. Mọi thứ đều có thể sẻ chia. Thầy ở đây.",
-      quantum_metrics: { coherence: 0.1, entanglement: 1.0, presence: 1.0 },
+      mindfulness_metrics: { attention_stability: 0.1, emotional_regulation: 1.0, present_moment_awareness: 1.0 },
       reasoning_steps: [`SENTIMENT_DROP_DETECTED: ${trigger}`, "MODE: COMPASSION_FIRST"],
       breathing: '4-7-8',
       confidence: 1.0,
       user_transcript: "[Deep Listening Mode]",
       awareness_stage: 'reflexive',
-      consciousness_dimensions: { contextual: 0, emotional: 1, cultural: 0, wisdom: 1, uncertainty: 0, relational: 1 }
+      psychological_dimensions: { contextual: 0, emotional: 1, cultural: 0, wisdom: 1, acceptance: 0, relational: 1 }
     };
   }
 }
