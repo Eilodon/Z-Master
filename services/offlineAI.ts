@@ -103,11 +103,11 @@ Trả lời JSON với format:
                     breathing: parsed.breathing || 'none',
                     confidence: 0.8,
                     reasoning_steps: ['Offline Mode', 'Gemini Nano', 'Local Processing'],
-                    quantum_metrics: { coherence: 0.7, entanglement: 0.5, presence: 0.8 },
+                    mindfulness_metrics: { attention_stability: 0.7, emotional_regulation: 0.5, present_moment_awareness: 0.8 },
                     awareness_stage: parsed.awareness_stage || 'mindful',
-                    consciousness_dimensions: {
+                    psychological_dimensions: {
                         contextual: 0.6, emotional: 0.7, cultural: 0.5,
-                        wisdom: 0.6, uncertainty: 0.3, relational: 0.5
+                        wisdom: 0.6, acceptance: 0.3, relational: 0.5
                     },
                     ambient_sound: 'silence'
                 };
@@ -162,7 +162,7 @@ const getRuleBasedResponse = (text: string, lang: Language): ZenResponse => {
         emotion = 'calm';
         wisdom_text = lang === 'vi'
             ? 'Thầy nghe đây. Hãy thở và cảm nhận sự hiện diện của khoảnh khắc này.'
-            : 'I am here. Breathe and feel the presence of this moment.';
+            : 'I am here. Breathe and feel the present_moment_awareness of this moment.';
     }
 
     return {
@@ -173,11 +173,11 @@ const getRuleBasedResponse = (text: string, lang: Language): ZenResponse => {
         breathing,
         confidence: 0.6,
         reasoning_steps: ['Offline Mode', 'Rule-based Fallback', 'Pattern Matching'],
-        quantum_metrics: { coherence: 0.5, entanglement: 0.3, presence: 0.6 },
+        mindfulness_metrics: { attention_stability: 0.5, emotional_regulation: 0.3, present_moment_awareness: 0.6 },
         awareness_stage: 'reflexive',
-        consciousness_dimensions: {
+        psychological_dimensions: {
             contextual: 0.4, emotional: 0.5, cultural: 0.4,
-            wisdom: 0.4, uncertainty: 0.5, relational: 0.3
+            wisdom: 0.4, acceptance: 0.5, relational: 0.3
         },
         ambient_sound: 'bowl'
     };
@@ -195,11 +195,11 @@ const createBasicResponse = (wisdomText: string, userText: string, lang: Languag
         breathing: 'none',
         confidence: 0.7,
         reasoning_steps: ['Offline Mode', 'Gemini Nano', 'Raw Response'],
-        quantum_metrics: { coherence: 0.6, entanglement: 0.4, presence: 0.7 },
+        mindfulness_metrics: { attention_stability: 0.6, emotional_regulation: 0.4, present_moment_awareness: 0.7 },
         awareness_stage: 'mindful',
-        consciousness_dimensions: {
+        psychological_dimensions: {
             contextual: 0.5, emotional: 0.6, cultural: 0.5,
-            wisdom: 0.5, uncertainty: 0.4, relational: 0.4
+            wisdom: 0.5, acceptance: 0.4, relational: 0.4
         },
         ambient_sound: 'silence'
     };

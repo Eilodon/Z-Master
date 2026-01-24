@@ -7,7 +7,7 @@ export interface IDBConversation {
   id: string;
   timestamp: number;
   emotion: string;
-  quantum_metrics: any;
+  mindfulness_metrics: any;  // Updated from quantum_metrics
   summary?: string; // Future proofing
 }
 
@@ -47,7 +47,7 @@ export const dbService = {
       // Encrypt the sensitive payload
       const payload = {
         emotion: entry.emotion,
-        quantum_metrics: entry.quantum_metrics,
+        mindfulness_metrics: entry.mindfulness_metrics,
         summary: entry.summary,
       };
 

@@ -9,12 +9,13 @@ import {
 import { getSharedAudioContext } from "../../../services/audioContext";
 import { validateAndGetApiKey, sendZenTextQuery, flushTextQueue } from "../../../services/geminiService";
 import { SafetyGuard } from '../../../services/safetyGuard';
+import { ConversationMemoryService } from '../../../services/conversationMemoryService';
 
 // --- CONFIGURATION ---
 
 const updateZenStateTool: FunctionDeclaration = {
   name: 'update_zen_state',
-  description: 'Update the visual interface with current emotion, wisdom text, quantum metrics, and consciousness dimensions.',
+  description: 'Update the visual interface with current emotion, wisdom text, mindfulness metrics, and psychological dimensions.',
   parameters: {
     type: Type.OBJECT,
     properties: {
@@ -22,39 +23,42 @@ const updateZenStateTool: FunctionDeclaration = {
       wisdom_text: { type: Type.STRING },
       wisdom_english: { type: Type.STRING },
       breathing: { type: Type.STRING, enum: ['4-7-8', 'box-breathing', 'coherent-breathing', 'none'] },
-      quantum_metrics: {
+      mindfulness_metrics: {
         type: Type.OBJECT,
         properties: {
-          coherence: { type: Type.NUMBER },
-          entanglement: { type: Type.NUMBER },
-          presence: { type: Type.NUMBER }
+          attention_stability: { type: Type.NUMBER },
+          emotional_regulation: { type: Type.NUMBER },
+          present_moment_awareness: { type: Type.NUMBER }
         },
-        required: ['coherence', 'entanglement', 'presence']
+        required: ['attention_stability', 'emotional_regulation', 'present_moment_awareness']
       },
       awareness_stage: { type: Type.STRING, enum: ['reflexive', 'aware', 'mindful', 'contemplative'] },
-      consciousness_dimensions: {
+      psychological_dimensions: {
         type: Type.OBJECT,
         properties: {
           contextual: { type: Type.NUMBER },
           emotional: { type: Type.NUMBER },
           cultural: { type: Type.NUMBER },
           wisdom: { type: Type.NUMBER },
-          uncertainty: { type: Type.NUMBER },
+          acceptance: { type: Type.NUMBER },
           relational: { type: Type.NUMBER }
         },
-        required: ['contextual', 'emotional', 'cultural', 'wisdom', 'uncertainty', 'relational']
+        required: ['contextual', 'emotional', 'cultural', 'wisdom', 'acceptance', 'relational']
       },
       reasoning_steps: { type: Type.ARRAY, items: { type: Type.STRING } },
       ambient_sound: { type: Type.STRING, enum: ['rain', 'bowl', 'bell', 'silence', 'mekong', 'monsoon'] }
     },
-    required: ['emotion', 'wisdom_text', 'quantum_metrics', 'awareness_stage', 'consciousness_dimensions']
+    required: ['emotion', 'wisdom_text', 'mindfulness_metrics', 'awareness_stage', 'psychological_dimensions']
   }
 };
 
-const getSystemInstruction = (mode: CulturalMode) => `
-You are an AI Zen Master inspired by Thích Nhất Hạnh, operating as a "Quantum Consciousness Engine".
+const getSystemInstruction = (mode: CulturalMode, narrativeSummary?: string) => `
+You are an AI Zen Master inspired by Thích Nhất Hạnh, trained in mindfulness-based interventions and Buddhist psychology.
 This is a REAL-TIME voice conversation.
 
+${narrativeSummary ? `CONVERSATION MEMORY (use this context to personalize your response):
+${narrativeSummary}
+` : ''}
 CORE TEACHINGS LOGIC (Apply based on emotion):
 - Sadness/Loss -> Teach "Impermanence" (Vô thường): The cloud never dies, it becomes rain.
 - Anger/Frustration -> Teach "Compassion" (Từ bi): Hold anger like a mother holds a crying baby.
@@ -73,6 +77,7 @@ INSTRUCTIONS:
 3. Call 'update_zen_state' IMMEDIATELY at the start of your turn to update the UI.
 4. If user is silent, maintain presence.
 5. If in crisis, guide to breathe immediately.
+6. ${narrativeSummary ? 'Reference the user\'s past themes and progress when relevant, showing continuity.' : ''}
 `;
 
 const getClient = (apiKey: string) => {
@@ -209,7 +214,18 @@ export class ZenLiveSession {
         }
       };
 
-      // STEP 4: Connect to Gemini
+      // STEP 4: Get conversation memory context
+      let narrativeSummary: string | undefined;
+      try {
+        narrativeSummary = await ConversationMemoryService.getNarrativeSummary();
+        if (narrativeSummary) {
+          logger.log('[Memory] Loaded narrative context:', narrativeSummary.slice(0, 100));
+        }
+      } catch (err) {
+        logger.warn('[Memory] Failed to load narrative:', err);
+      }
+
+      // STEP 5: Connect to Gemini
       const key = await validateAndGetApiKey();
       const ai = getClient(key);
       const voiceName = this.lang === 'vi' ? 'Kore' : 'Fenrir';
@@ -224,7 +240,7 @@ export class ZenLiveSession {
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName } }
           },
-          systemInstruction: getSystemInstruction(this.mode),
+          systemInstruction: getSystemInstruction(this.mode, narrativeSummary),
           tools: [{ functionDeclarations: [updateZenStateTool] }]
         },
         callbacks: {

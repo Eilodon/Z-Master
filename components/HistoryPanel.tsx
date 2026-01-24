@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { History, TrendingUp, X, Trash2, Fingerprint, Map } from 'lucide-react';
-import { ConversationEntry, ConsciousnessArchetype } from '../types';
+import { History, TrendingUp, X, Trash2, Brain, Map } from 'lucide-react';
+import { ConversationEntry } from '../types';
 import { dbService } from '../services/db';
 
 interface Props {
@@ -18,43 +18,43 @@ export const HistoryPanel: React.FC<Props> = ({ history, onClear }) => {
     // Use history prop directly
     const displayData = history;
 
-    // Helper for safe access
-    const safeMetric = (entry: ConversationEntry, key: 'coherence' | 'presence' | 'entanglement') => {
-        return entry.quantum_metrics ? entry.quantum_metrics[key] : 0;
+    // Helper for safe access to mindfulness metrics
+    const safeMetric = (entry: ConversationEntry, key: 'attention_stability' | 'present_moment_awareness' | 'emotional_regulation') => {
+        return entry.mindfulness_metrics ? entry.mindfulness_metrics[key] : 0;
     };
 
-    const avgCoherence = displayData.reduce((sum, e) => sum + safeMetric(e, 'coherence'), 0) / (displayData.length || 1);
-    const avgPresence = displayData.reduce((sum, e) => sum + safeMetric(e, 'presence'), 0) / (displayData.length || 1);
-    const avgEntanglement = displayData.reduce((sum, e) => sum + safeMetric(e, 'entanglement'), 0) / (displayData.length || 1);
-    
-    // DETERMINE CONSCIOUSNESS DNA ARCHETYPE
-    let archetype: ConsciousnessArchetype = 'The Seeker';
-    let description = "Bạn đang trên hành trình tìm kiếm sự bình an.";
+    const avgAttentionStability = displayData.reduce((sum, e) => sum + safeMetric(e, 'attention_stability'), 0) / (displayData.length || 1);
+    const avgPresentMomentAwareness = displayData.reduce((sum, e) => sum + safeMetric(e, 'present_moment_awareness'), 0) / (displayData.length || 1);
+    const avgEmotionalRegulation = displayData.reduce((sum, e) => sum + safeMetric(e, 'emotional_regulation'), 0) / (displayData.length || 1);
 
-    if (avgPresence > 0.7 && avgCoherence > 0.7) {
-        archetype = 'The Warrior'; // High discipline
-        description = "Bạn có khả năng định tâm vững chãi như núi.";
-    } else if (avgEntanglement > 0.7) {
-        archetype = 'The Healer'; // High connection
-        description = "Trái tim bạn rộng mở và kết nối sâu sắc với vạn vật.";
-    } else if (avgCoherence > 0.8) {
-        archetype = 'The Observer'; // High coherence
-        description = "Bạn nhìn thấu bản chất vấn đề với sự tĩnh lặng.";
+    // DETERMINE MINDFULNESS PROFILE (clinically based)
+    let profileTitle = "Developing Awareness";
+    let description = "Bạn đang xây dựng nền tảng chánh niệm.";
+
+    if (avgPresentMomentAwareness > 0.7 && avgAttentionStability > 0.7) {
+        profileTitle = "Strong Practice"; // High discipline
+        description = "Bạn đã phát triển khả năng định tâm vững chãi.";
+    } else if (avgEmotionalRegulation > 0.7) {
+        profileTitle = "Emotional Balance"; // High regulation
+        description = "Bạn điều tiết cảm xúc một cách khéo léo.";
+    } else if (avgAttentionStability > 0.8) {
+        profileTitle = "Focused Attention"; // High attention
+        description = "Bạn có khả năng tập trung ổn định tốt.";
     }
 
     return {
       displayData,
-      avgCoherence,
-      avgPresence,
-      avgEntanglement,
-      archetype,
+      avgAttentionStability,
+      avgPresentMomentAwareness,
+      avgEmotionalRegulation,
+      profileTitle,
       description
     };
   }, [history]);
 
   if (!analysis) return null;
 
-  const { displayData, avgCoherence, avgPresence, avgEntanglement, archetype, description } = analysis;
+  const { displayData, avgAttentionStability, avgPresentMomentAwareness, avgEmotionalRegulation, profileTitle, description } = analysis;
 
   const emotionColor = {
     anxious: 'border-orange-400 bg-orange-50',
@@ -87,27 +87,27 @@ export const HistoryPanel: React.FC<Props> = ({ history, onClear }) => {
           {/* Header */}
           <div className="bg-gradient-to-r from-stone-800 to-stone-900 text-amber-50 p-4 rounded-t-2xl flex items-center justify-between shadow-sm">
             <div className="flex items-center gap-2">
-              <Fingerprint size={18} className="text-amber-400" />
-              <h3 className="font-bold text-sm tracking-wide uppercase">Consciousness DNA</h3>
+              <Brain size={18} className="text-amber-400" />
+              <h3 className="font-bold text-sm tracking-wide uppercase">Mindfulness Profile</h3>
             </div>
             <button onClick={() => setIsOpen(false)} className="hover:bg-white/10 rounded-full p-1 transition-colors">
               <X size={18} />
             </button>
           </div>
 
-          {/* DNA Profile (New Feature) */}
+          {/* Mindfulness Profile (Clinical Metrics) */}
           <div className="bg-stone-50 p-5 border-b border-stone-200">
              <div className="text-center mb-3">
-                <span className="text-[10px] uppercase tracking-[0.2em] text-stone-400">Your Archetype</span>
-                <h4 className="text-xl font-serif font-bold text-stone-800 mt-1">{archetype}</h4>
+                <span className="text-[10px] uppercase tracking-[0.2em] text-stone-400">Practice Level</span>
+                <h4 className="text-xl font-serif font-bold text-stone-800 mt-1">{profileTitle}</h4>
                 <p className="text-xs text-stone-500 italic mt-1">{description}</p>
              </div>
-             
-             {/* Mini DNA Bar Chart */}
+
+             {/* Mindfulness Metrics Bar Chart */}
              <div className="space-y-2 mt-4">
-                <DnaBar label="Presence" value={avgPresence} color="bg-emerald-500" />
-                <DnaBar label="Connection" value={avgEntanglement} color="bg-purple-500" />
-                <DnaBar label="Clarity" value={avgCoherence} color="bg-blue-500" />
+                <DnaBar label="Present Moment" value={avgPresentMomentAwareness} color="bg-emerald-500" />
+                <DnaBar label="Emotion Regulation" value={avgEmotionalRegulation} color="bg-purple-500" />
+                <DnaBar label="Attention" value={avgAttentionStability} color="bg-blue-500" />
              </div>
           </div>
 
@@ -132,8 +132,8 @@ export const HistoryPanel: React.FC<Props> = ({ history, onClear }) => {
                     <span className="text-[10px] text-stone-400 font-mono">{timeStr}</span>
                   </div>
                   <div className="flex gap-3 text-[10px] font-medium opacity-80">
-                    <span className="text-blue-600">C: {Math.round((entry.quantum_metrics?.coherence || 0) * 100)}</span>
-                    <span className="text-purple-600">E: {Math.round((entry.quantum_metrics?.entanglement || 0) * 100)}</span>
+                    <span className="text-blue-600">Attn: {Math.round((entry.mindfulness_metrics?.attention_stability || 0) * 100)}</span>
+                    <span className="text-purple-600">Reg: {Math.round((entry.mindfulness_metrics?.emotional_regulation || 0) * 100)}</span>
                   </div>
                 </div>
               );

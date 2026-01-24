@@ -12,8 +12,8 @@ export const ReasoningPanel: React.FC<Props> = ({ data, onBack }) => {
   // If no reasoning provided, render nothing
   if (!data.reasoning_steps || data.reasoning_steps.length === 0) return null;
 
-  const dims = data.consciousness_dimensions || { 
-     contextual: 0.5, emotional: 0.5, cultural: 0.5, wisdom: 0.5, uncertainty: 0.5, relational: 0.5 
+  const dims = data.psychological_dimensions || {
+     contextual: 0.5, emotional: 0.5, cultural: 0.5, wisdom: 0.5, acceptance: 0.5, relational: 0.5
   };
 
   return (
@@ -21,7 +21,7 @@ export const ReasoningPanel: React.FC<Props> = ({ data, onBack }) => {
       {/* Header Viz */}
       <div className="flex items-center gap-2 mb-4 text-stone-700">
         <Waves size={16} className="text-orange-500" />
-        <span className="font-semibold text-sm font-sans uppercase tracking-wider">Quantum Field Dimensions</span>
+        <span className="font-semibold text-sm font-sans uppercase tracking-wider">Psychological Assessment</span>
       </div>
 
       {/* Dimensions Grid */}
@@ -63,32 +63,32 @@ export const ReasoningPanel: React.FC<Props> = ({ data, onBack }) => {
         </div>
       </div>
 
-      {/* Quantum Metrics (Orb Inputs) */}
-      {data.quantum_metrics && (
+      {/* Mindfulness Metrics */}
+      {data.mindfulness_metrics && (
         <div className="pt-6 border-t border-stone-200 mb-8">
             <div className="flex items-center gap-2 mb-4 text-stone-700">
                 <Activity size={16} className="text-stone-400" />
-                <span className="font-semibold text-sm font-sans uppercase tracking-wider">Coherence Metrics</span>
+                <span className="font-semibold text-sm font-sans uppercase tracking-wider">Mindfulness Metrics</span>
             </div>
             <div className="grid grid-cols-3 gap-4">
-               <MetricItem 
-                 icon={<Activity size={18} />} 
-                 label="Coherence" 
-                 value={data.quantum_metrics.coherence} 
+               <MetricItem
+                 icon={<Activity size={18} />}
+                 label="Attention Stability"
+                 value={data.mindfulness_metrics.attention_stability}
                  color="text-blue-500"
                  delay={0}
                />
-               <MetricItem 
-                 icon={<Zap size={18} />} 
-                 label="Entanglement" 
-                 value={data.quantum_metrics.entanglement} 
+               <MetricItem
+                 icon={<Zap size={18} />}
+                 label="Emotion Regulation"
+                 value={data.mindfulness_metrics.emotional_regulation}
                  color="text-purple-500"
                  delay={100}
                />
-               <MetricItem 
-                 icon={<Brain size={18} />} 
-                 label="Presence" 
-                 value={data.quantum_metrics.presence} 
+               <MetricItem
+                 icon={<Brain size={18} />}
+                 label="Present Awareness"
+                 value={data.mindfulness_metrics.present_moment_awareness}
                  color="text-emerald-500"
                  delay={200}
                />

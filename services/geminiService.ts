@@ -2,6 +2,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { ZenResponse, CulturalMode, Language } from "../types";
 import { TOKENS } from "../utils/designSystem";
 import { getOfflineZenResponse, isGeminiNanoAvailable } from "./offlineAI";
+import { ConversationMemoryService } from "./conversationMemoryService";
 
 // Queue for initial text context if needed
 let textQueue: { role: string, text: string }[] = [];
@@ -113,15 +114,27 @@ export const sendZenTextQuery = async (
     .trim()
     .substring(0, 2000);
 
+  // Get conversation memory context
+  let narrativeContext = '';
+  try {
+    const summary = await ConversationMemoryService.getNarrativeSummary();
+    if (summary) {
+      narrativeContext = `\n    Conversation Memory (use to personalize): ${summary}\n`;
+    }
+  } catch (err) {
+    console.warn('[GeminiService] Failed to load narrative:', err);
+  }
+
   const client = new GoogleGenAI({ apiKey: key });
 
   const prompt = `
     User Text: "${sanitized}"
     Cultural Mode: ${mode}
-    Language: ${lang}
-    
+    Language: ${lang}${narrativeContext}
+
     Analyze the user's text and provide a Zen response.
     If in Vietnamese, use "Thầy" (Teacher) and "con" (Child).
+    ${narrativeContext ? 'Reference past themes and progress when relevant.' : ''}
     `;
 
   try {
@@ -139,27 +152,27 @@ export const sendZenTextQuery = async (
             wisdom_text: { type: Type.STRING },
             wisdom_english: { type: Type.STRING },
             breathing: { type: Type.STRING, enum: ['4-7-8', 'box-breathing', 'coherent-breathing', 'none'] },
-            quantum_metrics: {
+            mindfulness_metrics: {
               type: Type.OBJECT,
               properties: {
-                coherence: { type: Type.NUMBER },
-                entanglement: { type: Type.NUMBER },
-                presence: { type: Type.NUMBER }
+                attention_stability: { type: Type.NUMBER },
+                emotional_regulation: { type: Type.NUMBER },
+                present_moment_awareness: { type: Type.NUMBER }
               },
-              required: ['coherence', 'entanglement', 'presence']
+              required: ['attention_stability', 'emotional_regulation', 'present_moment_awareness']
             },
             awareness_stage: { type: Type.STRING, enum: ['reflexive', 'aware', 'mindful', 'contemplative'] },
-            consciousness_dimensions: {
+            psychological_dimensions: {
               type: Type.OBJECT,
               properties: {
                 contextual: { type: Type.NUMBER },
                 emotional: { type: Type.NUMBER },
                 cultural: { type: Type.NUMBER },
                 wisdom: { type: Type.NUMBER },
-                uncertainty: { type: Type.NUMBER },
+                acceptance: { type: Type.NUMBER },
                 relational: { type: Type.NUMBER }
               },
-              required: ['contextual', 'emotional', 'cultural', 'wisdom', 'uncertainty', 'relational']
+              required: ['contextual', 'emotional', 'cultural', 'wisdom', 'acceptance', 'relational']
             },
             reasoning_steps: { type: Type.ARRAY, items: { type: Type.STRING } },
             ambient_sound: { type: Type.STRING, enum: ['rain', 'bowl', 'bell', 'silence', 'mekong', 'monsoon'] }
