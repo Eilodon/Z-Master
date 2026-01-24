@@ -6,7 +6,7 @@ import {
   base64EncodeAudio,
   RobustVoiceDetector
 } from "../../../services/audioManager";
-import { getSharedAudioContext } from "../../../services/audioContext";
+import { audioContextManager } from "../../../services/audioContextManager";
 import { validateAndGetApiKey, sendZenTextQuery, flushTextQueue } from "../../../services/geminiService";
 import { SafetyGuard } from '../../../services/safetyGuard';
 import { ConversationMemoryService } from '../../../services/conversationMemoryService';
@@ -153,9 +153,9 @@ export class ZenLiveSession {
       throw new Error("PermissionDenied");
     }
 
-    // STEP 2: Initialize Audio Context
+    // STEP 2: Initialize Audio Context with thread-safe manager
     try {
-      this.inputContext = await getSharedAudioContext();
+      this.inputContext = await audioContextManager.getSharedContext();
       this.nextStartTime = this.inputContext.currentTime;
     } catch (e) {
       throw new Error("AudioContext failed to initialize");
@@ -253,7 +253,7 @@ export class ZenLiveSession {
           onclose: (e) => this.handleConnectionLoss("closed", e),
           onerror: (err) => {
             logger.error(err);
-            this.handleConnectionLoss("error");
+            this.handleConnectionLoss("error", err?.toString() || "Unknown error");
           }
         }
       });
@@ -383,7 +383,10 @@ export class ZenLiveSession {
       this.nextStartTime = now + 0.05;
     }
     const buffer = this.inputContext.createBuffer(1, float32Array.length, 24000);
-    buffer.copyToChannel(float32Array, 0);
+    // Create a copy to avoid SharedArrayBuffer issues
+    const audioData = new Float32Array(float32Array.length);
+    audioData.set(float32Array);
+    buffer.copyToChannel(audioData, 0);
 
     const source = this.inputContext.createBufferSource();
     source.buffer = buffer;
@@ -425,6 +428,13 @@ export class ZenLiveSession {
       try { this.workletNode.disconnect(); } catch (e) { }
       this.workletNode = null;
     }
+    
+    // Release audio context reference
+    if (this.inputContext) {
+      audioContextManager.releaseContext();
+      this.inputContext = null;
+    }
+    
     this.sessionPromise = null;
     this.onDisconnectCallback(reason, false);
   }

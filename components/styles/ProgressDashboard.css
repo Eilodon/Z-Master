@@ -1,0 +1,66 @@
+/* Progress Dashboard Component Styles */
+
+.chart-bar {
+  width: 100%;
+  border-radius: 0.25rem 0.25rem 0 0;
+}
+
+.chart-bar-depression {
+  background-color: rgb(59 130 246);
+}
+
+.chart-bar-anxiety {
+  background-color: rgb(34 197 94);
+}
+
+.chart-bar-mindfulness {
+  background-color: rgb(147 51 234);
+}
+
+/* Height classes for depression (0-27 scale) */
+.height-0 { height: 0%; }
+.height-4 { height: 15%; }   /* 4/27 */
+.height-7 { height: 26%; }   /* 7/27 */
+.height-11 { height: 41%; }  /* 11/27 */
+.height-14 { height: 52%; }  /* 14/27 */
+.height-18 { height: 67%; }  /* 18/27 */
+.height-22 { height: 81%; }  /* 22/27 */
+.height-27 { height: 100%; } /* 27/27 */
+
+/* Height classes for anxiety (0-21 scale) */
+.height-anxiety-0 { height: 0%; }
+.height-anxiety-4 { height: 19%; }   /* 4/21 */
+.height-anxiety-7 { height: 33%; }   /* 7/21 */
+.height-anxiety-10 { height: 48%; }  /* 10/21 */
+.height-anxiety-14 { height: 67%; }  /* 14/21 */
+.height-anxiety-17 { height: 81%; }  /* 17/21 */
+.height-anxiety-21 { height: 100%; } /* 21/21 */
+
+/* Height classes for mindfulness (0-6 scale) */
+.height-mindfulness-0 { height: 0%; }
+.height-mindfulness-1 { height: 17%; }  /* 1/6 */
+.height-mindfulness-2 { height: 33%; }  /* 2/6 */
+.height-mindfulness-3 { height: 50%; }  /* 3/6 */
+.height-mindfulness-4 { height: 67%; }  /* 4/6 */
+.height-mindfulness-5 { height: 83%; }  /* 5/6 */
+.height-mindfulness-6 { height: 100%; } /* 6/6 */
+
+.chart-container {
+  height: 8rem;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.chart-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+}
+
+.chart-label {
+  font-size: 0.75rem;
+  color: rgb(107 114 128);
+  margin-top: 0.25rem;
+}

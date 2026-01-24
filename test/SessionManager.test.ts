@@ -136,10 +136,10 @@ describe('SessionManager', () => {
             user_transcript: 'User said something',
             confidence: 0.9,
             breathing: 'none' as const,
-            quantum_metrics: { coherence: 0.9, entanglement: 0.5, presence: 0.8 },
+            mindfulness_metrics: { attention_stability: 0.9, emotional_regulation: 0.5, present_moment_awareness: 0.8 },
             reasoning_steps: ['Reasoning...'],
             awareness_stage: 'mindful' as const,
-            consciousness_dimensions: { contextual: 1, emotional: 1, cultural: 1, wisdom: 1, uncertainty: 0, relational: 1 }
+            psychological_dimensions: { contextual: 1, emotional: 1, cultural: 1, wisdom: 1, acceptance: 0, relational: 1 }
         };
 
         handleStateChange(zenData);

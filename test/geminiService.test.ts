@@ -80,7 +80,7 @@ describe('Gemini Service', () => {
 
         it('throws if no text returned', async () => {
             mockGenerateContent.mockResolvedValue({ text: null });
-            await expect(analyzeEnvironment('key', 'b64')).rejects.toThrow('No response from AI');
+            await expect(analyzeEnvironment('key', 'b64')).rejects.toThrow('CAMERA_ANALYSIS_FAILED');
         });
     });
 
