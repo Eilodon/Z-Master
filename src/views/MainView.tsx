@@ -17,6 +17,7 @@ import { LoadingScreen } from '../../components/LoadingScreen';
 import { MicroPractices } from '../../components/MicroPractices';
 import { PHQ4Tracker } from '../../components/PHQ4Tracker';
 import { NarrativeMemory } from '../../components/NarrativeMemory';
+import { StreakBadge } from '../../components/StreakBadge';
 import { ZenResponse } from '../../types';
 import { detectEmergency } from '../../data/emergencyKeywords';
 import { Keyboard, Mic, Languages, SendHorizontal, Brain, Sparkles, Wifi, WifiOff, RotateCcw, Eye, BookOpen } from 'lucide-react';
@@ -314,6 +315,9 @@ export function MainView() {
 
                     {/* PHQ-4 Clinical Assessment Tracker */}
                     <PHQ4Tracker language={language} />
+
+                    {/* Streak & Engagement System */}
+                    <StreakBadge language={language} />
 
                     {/* --- UI OVERLAY: GLASSMORPHISM --- */}
 

@@ -102,6 +102,20 @@ export interface ConversationMemory {
   };
 }
 
+// Engagement & Gamification
+export interface StreakData {
+  user_id: string;
+  current_streak: number;          // Current consecutive days
+  longest_streak: number;          // All-time longest streak
+  last_check_in: number;           // Timestamp of last activity
+  total_check_ins: number;         // Total number of check-ins
+  milestones: Array<{
+    type: 'streak_3' | 'streak_7' | 'streak_30' | 'streak_100' | 'total_10' | 'total_50' | 'total_100';
+    achieved_at: number;
+    celebrated: boolean;
+  }>;
+}
+
 declare global {
   interface AIStudio {
     hasSelectedApiKey: () => Promise<boolean>;
