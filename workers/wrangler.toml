@@ -6,3 +6,7 @@ compatibility_date = "2024-01-01"
 ALLOWED_ORIGIN = "http://localhost:5173" # Change to production domain later
 
 # Note: GEMINI_API_KEY should be set via `wrangler secret put GEMINI_API_KEY`
+
+# Cloudflare Workers Rate Limiting (GA)
+[unsafe.bindings]
+service = { name = "rate-limiter", binding = "RATE_LIMITER" }

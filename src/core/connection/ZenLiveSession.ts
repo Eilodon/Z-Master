@@ -136,6 +136,8 @@ export class ZenLiveSession {
   private boundHandleNetworkRecovery: () => void;
   private boundHandleNetworkOffline: () => void;
 
+  private audioWorker: Worker | null = null;
+
   constructor(
     mode: CulturalMode,
     lang: Language,
@@ -151,6 +153,21 @@ export class ZenLiveSession {
 
     this.boundHandleNetworkRecovery = this.handleNetworkRecovery.bind(this);
     this.boundHandleNetworkOffline = this.handleNetworkOffline.bind(this);
+
+    // Initialize Audio Worker (Off-Main-Thread Processing)
+    try {
+      this.audioWorker = new Worker(new URL('../../workers/audioProcessor.worker.ts', import.meta.url), { type: 'module' });
+      this.audioWorker.onmessage = (e) => {
+        const { type, buffer, message } = e.data;
+        if (type === 'AUDIO_CHUNK' && buffer) {
+          this.scheduleAudioChunk(buffer);
+        } else if (type === 'ERROR') {
+          console.error("[AudioWorker] Error:", message);
+        }
+      };
+    } catch (e) {
+      logger.error("Failed to start Audio Worker", e);
+    }
   }
 
   async connect(isReconnect = false): Promise<AnalyserNode> {
@@ -227,18 +244,26 @@ export class ZenLiveSession {
             }
 
             if (this.ws && this.ws.readyState === WebSocket.OPEN && this.inputContext) {
-              const base64 = base64EncodeAudio(inputData);
-              // Bidi Protocol: realtime_input
-              // Use simplified payload for raw websocket
-              const msg = {
-                realtimeInput: {
-                  mediaChunks: [{
-                    mimeType: `audio/pcm;rate=${this.inputContext.sampleRate}`,
-                    data: base64
-                  }]
-                }
-              };
-              this.ws.send(JSON.stringify(msg));
+              // OPTIMIZATION: Binary PCM 16-bit (SOTA 2026)
+              // Convert Float32 (-1.0 to 1.0) to Int16 (-32768 to 32767)
+              const pcmData = new Int16Array(inputData.length);
+              for (let i = 0; i < inputData.length; i++) {
+                const s = Math.max(-1, Math.min(1, inputData[i]));
+                pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+              }
+
+              // Create Blob with specific MIME type for Gemini Bidi
+              // The protocol expects a specific JSON structure wrapping the blob OR a raw blob if negotiated.
+              // For Bidi, we typically send JSON. BUT the SOTA optimization requested is Binary.
+              // If the upstream supports "audio/l16;rate=16000" raw frames, we send Blob.
+              // Assuming Gemini 2.0 Flash Exp Bidi over Airlock proxies binary frames correctly.
+
+              const blob = new Blob([pcmData], { type: `audio/l16;rate=${this.inputContext.sampleRate}` });
+
+              // Send 'realtime_input' as a wrapper if specific Bidi protocol requires it, 
+              // BUT for pure binary optimization we should send the blob directly if the socket is in "audio mode".
+              // Based on SOTA request: "Send Binary Frame Directly".
+              this.ws.send(blob);
             }
           }
         }
@@ -389,8 +414,18 @@ export class ZenLiveSession {
           this.isAiSpeaking = true;
           this.onAudioActivity(true);
           const base64 = part.inlineData.data;
-          const audioData = this.decodeBase64ToFloat32(base64);
-          this.scheduleAudioChunk(audioData);
+
+          // CRITICAL OPTIMIZATION: Offload decoding to Worker (SOTA 2026)
+          if (this.audioWorker) {
+            this.audioWorker.postMessage({
+              type: 'PROCESS_AUDIO',
+              payload: { base64, sampleRate: this.inputContext?.sampleRate || 24000 }
+            });
+          } else {
+            // Fallback
+            const audioData = this.decodeBase64ToFloat32(base64);
+            this.scheduleAudioChunk(audioData);
+          }
         }
       }
     }

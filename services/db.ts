@@ -1,5 +1,7 @@
+import { openDB, IDBPDatabase } from 'idb';
+import { VaultService } from './crypto';
 
-const DB_NAME = 'ThayAI_DB';
+const DB_NAME = 'ThayAI_Vault_v1';
 const STORE_NAME = 'conversations';
 const DB_VERSION = 1;
 
@@ -7,27 +9,12 @@ export interface IDBConversation {
   id: string;
   timestamp: number;
   emotion: string;
-  mindfulness_metrics: any;  // Updated from quantum_metrics
-  summary?: string; // Future proofing
+  mindfulness_metrics: any;
+  summary?: string;
+  // Legacy fields might exist, but we prioritize encrypted storage
 }
 
-const openDB = (): Promise<IDBDatabase> => {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-      }
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-};
-
-import { VaultService } from './crypto';
-
-// New Schema for Encrypted Entry
+// Encrypted Schema
 interface EncryptedEntry {
   id: string;
   timestamp: number;
@@ -35,6 +22,22 @@ interface EncryptedEntry {
   cipher: ArrayBuffer;
   version: number;
 }
+
+let dbPromise: Promise<IDBPDatabase> | null = null;
+
+const getDB = () => {
+  if (!dbPromise) {
+    dbPromise = openDB(DB_NAME, DB_VERSION, {
+      upgrade(db) {
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          // Key path is 'id'
+          db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        }
+      },
+    });
+  }
+  return dbPromise;
+};
 
 export const dbService = {
   async saveEntry(entry: IDBConversation): Promise<void> {
@@ -44,82 +47,77 @@ export const dbService = {
     }
 
     try {
-      // Encrypt the sensitive payload
+      // 1. Prepare Sensitive Payload
       const payload = {
         emotion: entry.emotion,
         mindfulness_metrics: entry.mindfulness_metrics,
         summary: entry.summary,
       };
 
-      // USE VAULT
+      // 2. Encrypt with Vault (AES-GCM)
+      // This throws if Vault is locked
       const { iv, cipher } = await VaultService.encrypt(payload);
 
+      // 3. Create Sealed Entry
       const sealedEntry: EncryptedEntry = {
         id: entry.id,
         timestamp: entry.timestamp,
-        iv: Array.from(iv),
+        iv: Array.from(iv), // Convert Uint8Array to plain array for structured clone
         cipher: cipher,
-        version: 3 // Mark as Vault Encrypted
+        version: 3 // Version 3 = Vault Encrypted
       };
 
-      const db = await openDB();
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
-        const request = store.put(sealedEntry);
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
-      });
+      const db = await getDB();
+      await db.put(STORE_NAME, sealedEntry);
+
     } catch (e) {
-      console.error("[DB] Encryption Save Failed", e);
+      console.error("[DB] Secure Save Failed", e);
       throw e;
     }
   },
 
   async getAllEntries(): Promise<IDBConversation[]> {
-    if (!VaultService.isAuthenticated()) return []; // Cannot read without unlock
-
-    const db = await openDB();
-    const rawEntries: any[] = await new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
-      const request = store.getAll();
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-
-    const results: IDBConversation[] = [];
-
-    for (const raw of rawEntries) {
-      if ((raw.version === 2 || raw.version === 3) && raw.cipher && raw.iv) {
-        try {
-          const iv = new Uint8Array(raw.iv);
-          const decrypted = await VaultService.decrypt(iv, raw.cipher);
-          results.push({
-            id: raw.id,
-            timestamp: raw.timestamp,
-            ...decrypted
-          });
-        } catch (e) {
-          console.warn(`[DB] Decryption failed for ${raw.id} (Wrong key?)`, e);
-        }
-      } else if (raw.emotion) {
-        // Legacy cleartext - allow reading but warn
-        results.push(raw);
-      }
+    if (!VaultService.isAuthenticated()) {
+      console.warn("[DB] Vault Locked - Cannot read entries");
+      return [];
     }
 
-    return results.sort((a, b) => a.timestamp - b.timestamp);
+    try {
+      const db = await getDB();
+      const rawEntries: EncryptedEntry[] = await db.getAll(STORE_NAME);
+      const results: IDBConversation[] = [];
+
+      for (const raw of rawEntries) {
+        // Check if it's an encrypted entry
+        if (raw.version >= 3 && raw.cipher && raw.iv) {
+          try {
+            const iv = new Uint8Array(raw.iv);
+            const decrypted = await VaultService.decrypt(iv, raw.cipher);
+            results.push({
+              id: raw.id,
+              timestamp: raw.timestamp,
+              ...decrypted
+            });
+          } catch (e) {
+            console.warn(`[DB] Decryption failed for ${raw.id}`, e);
+          }
+        } else if ((raw as any).emotion) {
+          // HARDENING: STRICT VAULT POLICY (Blacksmith Protocol)
+          // Invariants: No cleartext data shall ever be read into memory space.
+          console.warn("[Strict Vault] Blocked legacy cleartext entry:", raw.id);
+          // results.push(raw as any); // BLOCKED
+        }
+      }
+
+      return results.sort((a, b) => a.timestamp - b.timestamp);
+    } catch (e) {
+      console.error("[DB] Load Failed", e);
+      return [];
+    }
   },
 
   async clearAll(): Promise<void> {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      const store = tx.objectStore(STORE_NAME);
-      const request = store.clear();
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
+    const db = await getDB();
+    await db.clear(STORE_NAME);
   }
 };
