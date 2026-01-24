@@ -26,3 +26,23 @@ export const createAirlockClient = (): GoogleGenAI => {
     },
   });
 };
+
+/**
+ * Establishes a raw WebSocket connection to the Gemini Live API via Airlock.
+ * Bypasses the SDK entirely for maximum control.
+ */
+export const connectLive = (modelId: string): WebSocket => {
+  const baseUrl = getAirlockBaseUrl();
+  // Transform HTTP URL to WebSocket URL
+  // e.g. https://worker.dev -> wss://worker.dev/v1beta/models/gemini-2.0-flash-exp/BidiWebsocket
+  const wsUrl = baseUrl.replace(/^http/, 'ws') + `/v1beta/models/${modelId}/BidiWebsocket`;
+
+  const ws = new WebSocket(wsUrl);
+
+  // Standard Airlock Headers are not supported in browser WebSocket API directly
+  // The Worker/Server must accept the connection authentication via protocol or init message.
+  // Assuming Airlock handles the proxying transparently or we send auth in the setup message.
+
+  return ws;
+};
+

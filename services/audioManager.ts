@@ -69,6 +69,40 @@ class ZenAudioProcessor extends AudioWorkletProcessor {
 registerProcessor('zen-audio-processor', ZenAudioProcessor);
 `;
 
+// --- RESAMPLER ---
+
+/**
+ * Resamples audio buffer from one sample rate to another using Linear Interpolation.
+ * Simple, fast, effectively sufficient for speech.
+ */
+export const resampleAudio = (audioBuffer: Float32Array, fromSampleRate: number, toSampleRate: number): Float32Array => {
+  if (fromSampleRate === toSampleRate) return audioBuffer;
+
+  const ratio = fromSampleRate / toSampleRate;
+  const newLength = Math.round(audioBuffer.length / ratio);
+  const result = new Float32Array(newLength);
+
+  for (let i = 0; i < newLength; i++) {
+    const position = i * ratio;
+    const index = Math.floor(position);
+    const fraction = position - index;
+
+    if (index + 1 < audioBuffer.length) {
+      // Linear Interpolation: y = y0 + (y1 - y0) * fraction
+      const y0 = audioBuffer[index];
+      const y1 = audioBuffer[index + 1];
+      result[i] = y0 + (y1 - y0) * fraction;
+    } else {
+      // End of buffer
+      result[i] = audioBuffer[index];
+    }
+  }
+
+  return result;
+};
+
+// --- AUDIO HELPERS ---
+
 /**
  * Utility to convert Float32 to 16-bit PCM for Gemini
  */
