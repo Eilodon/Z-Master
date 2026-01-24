@@ -47,7 +47,13 @@ class AudioContextManager {
   private async initializeContext(): Promise<AudioContext> {
     try {
       // Create new audio context with optimal settings
-      const context = new (window.AudioContext || (window as any).webkitAudioContext)();
+      // Attempt to force 24kHz for speech optimization (supported in modern browsers)
+      const contextOptions: AudioContextOptions = {
+        sampleRate: 24000,
+        latencyHint: 'interactive'
+      };
+
+      const context = new (window.AudioContext || (window as any).webkitAudioContext)(contextOptions);
 
       // Resume context if suspended (common in mobile browsers)
       if (context.state === 'suspended') {
@@ -56,7 +62,8 @@ class AudioContextManager {
 
       // Set optimal audio parameters for voice processing
       if (context.sampleRate !== 24000) {
-        console.warn(`[AudioContext] Sample rate is ${context.sampleRate}, expected 24000`);
+        console.warn(`[AudioContext] System enforced sample rate: ${context.sampleRate}Hz. Resampling may be required.`);
+        // Note: Downstream processors (AudioWorklet) must handle resampling if necessary.
       }
 
       // Add error handling

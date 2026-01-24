@@ -1,28 +1,29 @@
 // Digital Phenotyping Service
 // Privacy-first behavioral monitoring and mental health insights
 
-import { 
-  DigitalPhenotype, 
-  TypingDynamics, 
-  VoiceBiomarkers, 
+import {
+  DigitalPhenotype,
+  TypingDynamics,
+  VoiceBiomarkers,
   BehavioralPatterns,
   RiskAssessment,
   PhenotypingConsent,
   PhenotypingInsights,
   SharingPreferences
 } from '../types/digitalPhenotyping';
+import { VaultService } from './crypto';
 
 export class DigitalPhenotypingService {
   private static instance: DigitalPhenotypingService;
   private consent: PhenotypingConsent | null = null;
   private isCollecting = false;
   private collectionInterval: NodeJS.Timeout | null = null;
-  
+
   // Data collection buffers
   private typingBuffer: TypingDataPoint[] = [];
   private voiceBuffer: VoiceDataPoint[] = [];
   private behaviorBuffer: BehaviorDataPoint[] = [];
-  
+
   static getInstance(): DigitalPhenotypingService {
     if (!DigitalPhenotypingService.instance) {
       DigitalPhenotypingService.instance = new DigitalPhenotypingService();
@@ -70,9 +71,9 @@ export class DigitalPhenotypingService {
   }
 
   private validateConsent(consent: PhenotypingConsent): boolean {
-    return consent.purpose_understood && 
-           consent.risks_understood && 
-           consent.withdrawal_rights_understood;
+    return consent.purpose_understood &&
+      consent.risks_understood &&
+      consent.withdrawal_rights_understood;
   }
 
   async hasConsent(feature: keyof PhenotypingConsent['consent_choices']): Promise<boolean> {
@@ -85,10 +86,10 @@ export class DigitalPhenotypingService {
   async withdrawConsent(): Promise<void> {
     // Stop all data collection
     this.stopDataCollection();
-    
+
     // Delete collected data according to retention policy
     await this.deleteCollectedData();
-    
+
     // Clear consent
     this.consent = null;
     await this.saveConsent();
@@ -105,7 +106,7 @@ export class DigitalPhenotypingService {
     }
 
     this.isCollecting = true;
-    
+
     // Start collection intervals
     this.collectionInterval = setInterval(() => {
       this.processDataBuffers();
@@ -117,7 +118,7 @@ export class DigitalPhenotypingService {
 
   stopDataCollection(): void {
     this.isCollecting = false;
-    
+
     if (this.collectionInterval) {
       clearInterval(this.collectionInterval);
       this.collectionInterval = null;
@@ -142,7 +143,7 @@ export class DigitalPhenotypingService {
     };
 
     this.typingBuffer.push(dataPoint);
-    
+
     // Process buffer if it gets too large
     if (this.typingBuffer.length > 100) {
       await this.processTypingData();
@@ -154,13 +155,13 @@ export class DigitalPhenotypingService {
 
     // PRIVACY-FIRST: Process locally and immediately discard raw data
     const typingDynamics = this.analyzeTypingDynamics(this.typingBuffer);
-    
+
     // Store ONLY aggregated insights - never raw keystroke data
     await this.storeAggregatedInsights(typingDynamics);
-    
+
     // IMMEDIATELY clear raw data buffer - never persist raw timing
     this.typingBuffer = [];
-    
+
     // Clear any temporary references
     this.clearTemporaryTypingData();
   }
@@ -206,18 +207,50 @@ export class DigitalPhenotypingService {
 
   private async saveToSecureStorage(data: any): Promise<void> {
     try {
-      // Use encrypted local storage
+      // Use encrypted local storage via Vault
       const encrypted = await this.encryptData(data);
-      localStorage.setItem(`phenotype_${data.session_id}`, encrypted);
+      // serialized format: { iv: string(base64), cipher: string(base64) }
+      localStorage.setItem(`phenotype_${data.session_id}`, JSON.stringify(encrypted));
     } catch (error) {
       console.error('[DigitalPhenotyping] Failed to store insights:', error);
     }
   }
 
-  private async encryptData(data: any): Promise<string> {
-    // Simple encryption for local storage (in production, use proper encryption)
-    const json = JSON.stringify(data);
-    return btoa(json); // Base64 encoding for demo
+  private async encryptData(data: any): Promise<{ iv: string, cipher: string }> {
+    // secure encryption using VaultService
+    // We must ensure Vault is unlocked. If locked, we cannot save sensitive data.
+    if (!VaultService.isAuthenticated()) {
+      console.warn("[DigitalPhenotyping] Vault locked - cannot save data");
+      throw new Error("VAULT_LOCKED");
+    }
+
+    const { iv, cipher } = await VaultService.encrypt(data);
+
+    return {
+      iv: this.arrayBufferToBase64(iv),
+      cipher: this.arrayBufferToBase64(cipher)
+    };
+  }
+
+  // Helper for buffer conversion
+  private arrayBufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
+    let binary = '';
+    const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  }
+
+  private base64ToArrayBuffer(base64: string): ArrayBuffer {
+    const binary_string = atob(base64);
+    const len = binary_string.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binary_string.charCodeAt(i);
+    }
+    return bytes.buffer;
   }
 
   private analyzeTypingDynamics(events: TypingDataPoint[]): TypingDynamics {
@@ -289,14 +322,14 @@ export class DigitalPhenotypingService {
     }
 
     const voiceBiomarkers = await this.analyzeVoiceBiomarkers(audioData, sampleRate);
-    
+
     const dataPoint: VoiceDataPoint = {
       timestamp: Date.now(),
       biomarkers: voiceBiomarkers
     };
 
     this.voiceBuffer.push(dataPoint);
-    
+
     if (this.voiceBuffer.length > 10) {
       await this.processVoiceData();
     }
@@ -304,16 +337,16 @@ export class DigitalPhenotypingService {
 
   private async analyzeVoiceBiomarkers(audioData: Float32Array, sampleRate: number): Promise<VoiceBiomarkers> {
     // Simplified voice analysis - in production would use more sophisticated signal processing
-    
+
     // Calculate basic energy
     const energy = audioData.reduce((sum, sample) => sum + sample * sample, 0) / audioData.length;
-    
+
     // Find fundamental frequency (simplified)
     const pitch = this.estimatePitch(audioData, sampleRate);
-    
+
     // Calculate speech rate (would need speech detection)
     const speechRate = this.estimateSpeechRate(audioData, sampleRate);
-    
+
     return {
       pitch_mean: pitch,
       pitch_variance: 0, // Would need multiple segments
@@ -359,7 +392,7 @@ export class DigitalPhenotypingService {
     };
 
     this.behaviorBuffer.push(dataPoint);
-    
+
     if (this.behaviorBuffer.length > 50) {
       await this.processBehaviorData();
     }
@@ -377,11 +410,11 @@ export class DigitalPhenotypingService {
     // Analyze session patterns
     const sessionEvents = events.filter(e => e.eventType === 'session_start' || e.eventType === 'session_end');
     const sessionDurations = this.calculateSessionDurations(sessionEvents);
-    
+
     // Analyze time patterns
     const hourUsage = this.calculateHourlyUsage(events);
     const firstOpenTime = this.findFirstOpenTime(events);
-    
+
     return {
       session_frequency: sessionEvents.length / 7, // Sessions per day (last week)
       session_duration_avg: sessionDurations.reduce((a, b) => a + b, 0) / sessionDurations.length || 0,
@@ -404,7 +437,7 @@ export class DigitalPhenotypingService {
   // Risk Assessment
   async assessRisk(): Promise<RiskAssessment> {
     const recentData = await this.getRecentPhenotypeData();
-    
+
     if (!recentData) {
       return this.getDefaultRiskAssessment();
     }
@@ -412,9 +445,9 @@ export class DigitalPhenotypingService {
     const depressionRisk = this.assessDepressionRisk(recentData);
     const anxietyRisk = this.assessAnxietyRisk(recentData);
     const crisisRisk = this.assessCrisisRisk(recentData);
-    
+
     const overallRisk = Math.max(depressionRisk.score, anxietyRisk.score, crisisRisk.score);
-    
+
     return {
       timestamp: Date.now(),
       risk_score: overallRisk,
@@ -558,7 +591,7 @@ export class DigitalPhenotypingService {
   // Insights Generation
   async generateInsights(startDate: string, endDate: string): Promise<PhenotypingInsights> {
     const phenotypeData = await this.getPhenotypeDataInRange(startDate, endDate);
-    
+
     return {
       user_id: 'current_user', // Would get from auth
       generated_at: Date.now(),
@@ -588,9 +621,12 @@ export class DigitalPhenotypingService {
   }
 
   private async secureStore(key: string, data: any): Promise<void> {
-    // Use localStorage for now - in production would use encrypted database
-    const encrypted = btoa(JSON.stringify(data)); // Simple encoding for demo
-    localStorage.setItem(`phenotype_${key}`, encrypted);
+    try {
+      const encrypted = await this.encryptData(data);
+      localStorage.setItem(`phenotype_${key}`, JSON.stringify(encrypted));
+    } catch (e) {
+      console.warn("[DigitalPhenotyping] Encryption failed", e);
+    }
   }
 
   private async getRecentPhenotypeData(): Promise<DigitalPhenotype | null> {
@@ -603,13 +639,24 @@ export class DigitalPhenotypingService {
     if (!latestKey) return null;
 
     try {
-      const encrypted = localStorage.getItem(latestKey);
-      if (!encrypted) return null;
-      
-      const data = JSON.parse(atob(encrypted));
+      const stored = localStorage.getItem(latestKey);
+      if (!stored) return null;
+
+      const { iv, cipher } = JSON.parse(stored);
+
+      if (!VaultService.isAuthenticated()) {
+        console.warn("[DigitalPhenotyping] Vault locked - cannot read data");
+        return null;
+      }
+
+      const ivBuffer = this.base64ToArrayBuffer(iv);
+      const cipherBuffer = this.base64ToArrayBuffer(cipher);
+
+      // Decrypt
+      const data = await VaultService.decrypt(new Uint8Array(ivBuffer), cipherBuffer);
       return data;
     } catch (error) {
-      console.error('Failed to decode phenotype data:', error);
+      console.error('Failed to decode/decrypt phenotype data:', error);
       return null;
     }
   }
@@ -756,7 +803,7 @@ export class DigitalPhenotypingService {
 
   private generateRecommendations(depression: RiskDimension, anxiety: RiskDimension, crisis: RiskDimension): any[] {
     const recommendations = [];
-    
+
     if (crisis.score > 0.7) {
       recommendations.push({
         type: 'immediate',
@@ -767,7 +814,7 @@ export class DigitalPhenotypingService {
         resources: ['crisis_hotline', 'emergency_services']
       });
     }
-    
+
     if (depression.score > 0.6) {
       recommendations.push({
         type: 'preventive',
@@ -777,7 +824,7 @@ export class DigitalPhenotypingService {
         action_required: true
       });
     }
-    
+
     return recommendations;
   }
 
@@ -874,7 +921,7 @@ export class DigitalPhenotypingService {
 
   private async processVoiceData(): Promise<void> {
     if (this.voiceBuffer.length === 0) return;
-    
+
     // Process voice data
     this.voiceBuffer = [];
   }

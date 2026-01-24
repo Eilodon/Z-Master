@@ -23,9 +23,10 @@
       background-color: #111827;
     }
   </style>
-  
+
   <!-- Apple Touch Icon -->
-  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪷</text></svg>">
+  <link rel="apple-touch-icon"
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪷</text></svg>">
 
   <!-- Optimization Hints -->
   <link rel="preconnect" href="https://aistudiocdn.com" crossorigin>
@@ -44,6 +45,20 @@
   <meta property="og:title" content="Thầy.AI - Quantum Zen Companion">
   <meta property="og:description" content="Đồng hành tâm linh với AI inspired by Thích Nhất Hạnh">
   <meta property="og:type" content="website">
+
+  <!-- Security Headers -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval';
+    style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+    font-src 'self' https://fonts.gstatic.com data:;
+    img-src 'self' data: blob:;
+    media-src 'self' blob:;
+    connect-src 'self' https://generativelanguage.googleapis.com wss://generativelanguage.googleapis.com;
+    worker-src 'self' blob:;
+    base-uri 'self';
+    form-action 'self';
+  ">
 
   <link rel="icon"
     href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪷</text></svg>">
@@ -132,18 +147,24 @@
 
     /* Enhanced animations */
     @keyframes glow {
-      0%, 100% {
+
+      0%,
+      100% {
         box-shadow: 0 0 20px rgba(0, 243, 255, 0.3);
       }
+
       50% {
         box-shadow: 0 0 40px rgba(0, 243, 255, 0.6);
       }
     }
 
     @keyframes float {
-      0%, 100% {
+
+      0%,
+      100% {
         transform: translateY(0px);
       }
+
       50% {
         transform: translateY(-10px);
       }
@@ -153,24 +174,31 @@
       0% {
         background-position: -200% center;
       }
+
       100% {
         background-position: 200% center;
       }
     }
 
     @keyframes pulse-slow {
-      0%, 100% {
+
+      0%,
+      100% {
         opacity: 0.8;
       }
+
       50% {
         opacity: 1;
       }
     }
 
     @keyframes bounce-subtle {
-      0%, 100% {
+
+      0%,
+      100% {
         transform: translateY(0);
       }
+
       50% {
         transform: translateY(-2px);
       }
@@ -180,6 +208,7 @@
       from {
         transform: rotate(0deg);
       }
+
       to {
         transform: rotate(360deg);
       }
@@ -189,6 +218,7 @@
       0% {
         transform: translateX(-100%);
       }
+
       100% {
         transform: translateX(100%);
       }
@@ -231,22 +261,24 @@
 
     .no-scrollbar {
       -ms-overflow-style: none;
-      /* scrollbar-width: none; */ /* Commented out for broader compatibility */
+      /* scrollbar-width: none; */
+      /* Commented out for broader compatibility */
       /* Fallback for browsers that don't support scrollbar-width */
     }
-    
+
     /* Modern browsers that support scrollbar-width */
     @supports (scrollbar-width: none) {
       .no-scrollbar {
         scrollbar-width: none;
       }
     }
-    
+
     /* Fallback for older browsers */
     @supports not (scrollbar-width: none) {
       .no-scrollbar::-webkit-scrollbar {
         display: none;
       }
+
       .no-scrollbar {
         overflow: -moz-scrollbars-none;
       }
@@ -326,41 +358,51 @@
     }
 
     /* Width utilities for progress bars */
-    .w-0 { width: 0%; }
-    .w-10 { width: 10%; }
-    .w-20 { width: 20%; }
-    .w-30 { width: 30%; }
-    .w-40 { width: 40%; }
-    .w-50 { width: 50%; }
-    .w-60 { width: 60%; }
-    .w-70 { width: 70%; }
-    .w-80 { width: 80%; }
-    .w-90 { width: 90%; }
-    .w-100 { width: 100%; }
+    .w-0 {
+      width: 0%;
+    }
+
+    .w-10 {
+      width: 10%;
+    }
+
+    .w-20 {
+      width: 20%;
+    }
+
+    .w-30 {
+      width: 30%;
+    }
+
+    .w-40 {
+      width: 40%;
+    }
+
+    .w-50 {
+      width: 50%;
+    }
+
+    .w-60 {
+      width: 60%;
+    }
+
+    .w-70 {
+      width: 70%;
+    }
+
+    .w-80 {
+      width: 80%;
+    }
+
+    .w-90 {
+      width: 90%;
+    }
+
+    .w-100 {
+      width: 100%;
+    }
   </style>
-  <script type="importmap">
-{
-  "imports": {
-    "react/": "https://aistudiocdn.com/react@^19.2.1/",
-    "react": "https://aistudiocdn.com/react@^19.2.1",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
-    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.1",
-    "react-dom/client": "https://aistudiocdn.com/react-dom@^19.2.1/client",
-    "scheduler": "https://aistudiocdn.com/scheduler@^0.23.2",
-    "scheduler/": "https://aistudiocdn.com/scheduler@^0.23.2/",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.32.0",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.559.0",
-    "three": "https://aistudiocdn.com/three@^0.170.0",
-    "@react-three/fiber": "https://aistudiocdn.com/@react-three/fiber@^9.0.0-rc.3",
-    "@react-three/drei": "https://aistudiocdn.com/@react-three/drei@^9.120.0",
-    "tone": "https://aistudiocdn.com/tone@^14.7.77",
-    "zustand": "https://esm.sh/zustand@^5.0.3?external=react",
-    "vite": "https://esm.sh/vite@^7.2.7",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
-    "onnxruntime-web": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.1/dist/ort.es6.min.js"
-  }
-}
-</script>
+
 </head>
 
 <body class="bg-gray-900 text-gray-100 h-screen w-screen overflow-hidden">
