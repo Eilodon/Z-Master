@@ -16,9 +16,10 @@ import { HistoryPanel } from '../../components/HistoryPanel';
 import { LoadingScreen } from '../../components/LoadingScreen';
 import { MicroPractices } from '../../components/MicroPractices';
 import { PHQ4Tracker } from '../../components/PHQ4Tracker';
+import { NarrativeMemory } from '../../components/NarrativeMemory';
 import { ZenResponse } from '../../types';
 import { detectEmergency } from '../../data/emergencyKeywords';
-import { Keyboard, Mic, Languages, SendHorizontal, Brain, Sparkles, Wifi, WifiOff, RotateCcw, Eye } from 'lucide-react';
+import { Keyboard, Mic, Languages, SendHorizontal, Brain, Sparkles, Wifi, WifiOff, RotateCcw, Eye, BookOpen } from 'lucide-react';
 import { haptic } from '../../utils/designSystem';
 import { useZenSession } from '../../hooks/useZenSession';
 import { useUIStore, useZenStore } from '../../store/zenStore';
@@ -49,6 +50,7 @@ export function MainView() {
     const [inputText, setInputText] = useState('');
     const [isReasoningOpen, setIsReasoningOpen] = useState(false);
     const [showPractices, setShowPractices] = useState(false);
+    const [showNarrativeMemory, setShowNarrativeMemory] = useState(false);
     const [hasError, setHasError] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
 
@@ -351,6 +353,14 @@ export function MainView() {
                                     <RotateCcw size={18} />
                                 </button>
                             )}
+                            <button
+                                onClick={() => setShowNarrativeMemory(true)}
+                                className="p-2.5 rounded-full bg-gray-800/60 backdrop-blur-md text-gray-400 hover:bg-white/10 hover:text-purple-400 transition-all border border-white/10"
+                                aria-label="View Journey"
+                                title="View your journey"
+                            >
+                                <BookOpen size={18} />
+                            </button>
                             <HistoryPanel history={history} onClear={() => setHistory([])} />
                         </div>
                     </div>
@@ -469,6 +479,13 @@ export function MainView() {
                     >
                         {zenData && <ReasoningPanel data={zenData} onBack={() => setIsReasoningOpen(false)} />}
                     </BottomSheet>
+
+                    {/* Narrative Memory Modal */}
+                    <NarrativeMemory
+                        isOpen={showNarrativeMemory}
+                        onClose={() => setShowNarrativeMemory(false)}
+                        language={language}
+                    />
                 </>
             )}
 

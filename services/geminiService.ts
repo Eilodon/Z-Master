@@ -2,6 +2,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { ZenResponse, CulturalMode, Language } from "../types";
 import { TOKENS } from "../utils/designSystem";
 import { getOfflineZenResponse, isGeminiNanoAvailable } from "./offlineAI";
+import { ConversationMemoryService } from "./conversationMemoryService";
 
 // Queue for initial text context if needed
 let textQueue: { role: string, text: string }[] = [];
@@ -113,15 +114,27 @@ export const sendZenTextQuery = async (
     .trim()
     .substring(0, 2000);
 
+  // Get conversation memory context
+  let narrativeContext = '';
+  try {
+    const summary = await ConversationMemoryService.getNarrativeSummary();
+    if (summary) {
+      narrativeContext = `\n    Conversation Memory (use to personalize): ${summary}\n`;
+    }
+  } catch (err) {
+    console.warn('[GeminiService] Failed to load narrative:', err);
+  }
+
   const client = new GoogleGenAI({ apiKey: key });
 
   const prompt = `
     User Text: "${sanitized}"
     Cultural Mode: ${mode}
-    Language: ${lang}
-    
+    Language: ${lang}${narrativeContext}
+
     Analyze the user's text and provide a Zen response.
     If in Vietnamese, use "Thầy" (Teacher) and "con" (Child).
+    ${narrativeContext ? 'Reference past themes and progress when relevant.' : ''}
     `;
 
   try {
