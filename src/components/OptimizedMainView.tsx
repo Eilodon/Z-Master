@@ -1,38 +1,36 @@
-import * as React from 'react';
-import { useState, useRef, useEffect, Suspense, useMemo } from 'react';
-import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Stars } from '@react-three/drei';
-
-import { VoiceButton } from '../../components/VoiceButton';
-import { ZenCard } from '../../components/ZenCard';
-import { Snackbar } from '../../components/Snackbar';
-import { CameraScan } from '../../components/CameraScan';
-import { ReasoningPanel } from '../../components/ReasoningPanel';
-import { BottomSheet } from '../../components/PandoraParts';
-const AudioEngine = React.lazy(() => import('../../components/AudioEngine'));
-import { BreathingCircle } from '../../components/BreathingCircle';
-import { EmergencyProtocol } from '../../components/EmergencyProtocol';
-import { HistoryPanel } from '../../components/HistoryPanel';
-import { LoadingScreen } from '../../components/LoadingScreen';
-import { MicroPractices } from '../../components/MicroPractices';
-import { PHQ4Tracker } from '../../components/PHQ4Tracker';
-import { NarrativeMemory } from '../../components/NarrativeMemory';
-import { StreakBadge } from '../../components/StreakBadge';
-import { ZenResponse } from '../../types';
-import { detectEmergency } from '../../data/emergencyKeywords';
+import React, { useState, useRef, useEffect, Suspense, useMemo } from 'react';
+import { usePerformanceMonitor } from '../hooks/usePerformanceMonitor';
+import { enhancedErrorReporter } from '../utils/enhancedErrorReporting';
+import { LazySoulOrb } from './LazySoulOrb';
+import { VoiceButton } from '../components/VoiceButton';
+import { ZenCard } from '../components/ZenCard';
+import { Snackbar } from '../components/Snackbar';
+import { CameraScan } from '../components/CameraScan';
+import { ReasoningPanel } from '../components/ReasoningPanel';
+import { BottomSheet } from '../components/PandoraParts';
+import { BreathingCircle } from '../components/BreathingCircle';
+import { EmergencyProtocol } from '../components/EmergencyProtocol';
+import { HistoryPanel } from '../components/HistoryPanel';
+import { LoadingScreen } from '../components/LoadingScreen';
+import { MicroPractices } from '../components/MicroPractices';
+import { PHQ4Tracker } from '../components/PHQ4Tracker';
+import { NarrativeMemory } from '../components/NarrativeMemory';
+import { StreakBadge } from '../components/StreakBadge';
+import { ZenResponse } from '../types';
+import { detectEmergency } from '../data/emergencyKeywords';
 import { Keyboard, Mic, Languages, SendHorizontal, Brain, Sparkles, Wifi, WifiOff, RotateCcw, Eye, BookOpen } from 'lucide-react';
-import { haptic } from '../../utils/designSystem';
-import { useZenSession } from '../../hooks/useZenSession';
-import { useUIStore, useZenStore } from '../../store/zenStore';
-import { usePermissions } from '../../hooks/usePermissions';
+import { haptic } from '../utils/designSystem';
+import { useZenSession } from '../hooks/useZenSession';
+import { useUIStore, useZenStore } from '../store/zenStore';
+import { usePermissions } from '../hooks/usePermissions';
 
-import { SoulOrb } from '../components/Viz/SoulOrb';
+// Lazy load heavy components
+const AudioEngine = React.lazy(() => import('../components/AudioEngine'));
 const OrbViz = React.lazy(() => import('../components/Viz/OrbViz'));
 
-export function MainView() {
-    // --- DEBUG: Component Mounting ---
-    console.log('🜂 MainView component mounting...');
-
+export function OptimizedMainView() {
+    const { startRender, endRender } = usePerformanceMonitor('OptimizedMainView');
+    
     // --- Global State ---
     const {
         culturalMode, language, inputMode, snackbar, isLoading, showBreathing, emergencyActive, visualizationMode,
@@ -40,9 +38,6 @@ export function MainView() {
     } = useUIStore();
 
     const { status, connectionState, zenData, history, setHistory, setZenData } = useZenStore();
-
-    // --- DEBUG: Store States ---
-    console.log('🜂 Store states:', { isLoading, status: status.kind, zenData: !!zenData });
 
     // --- Permissions Hook ---
     const { requestInitialPermissions, micStatus } = usePermissions();
@@ -55,7 +50,7 @@ export function MainView() {
     const [hasError, setHasError] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
 
-    // Audio Viz State (Driven by real analyzer or mock)
+    // Audio Viz State (Optimized for memory)
     const [audioIntensity, setAudioIntensity] = useState(0);
     const analyserRef = useRef<AnalyserNode | null>(null);
     const animationFrameRef = useRef<number | null>(null);
@@ -72,6 +67,10 @@ export function MainView() {
         onError: (msg, kind) => {
             haptic('light');
             setSnackbar({ text: msg, kind });
+            enhancedErrorReporter.reportComponentError('MainView', 'session_error', new Error(msg), {
+              severity: kind,
+              userIntent: 'session_management'
+            });
         }
     });
 
@@ -82,41 +81,45 @@ export function MainView() {
 
     // Visualizer Loop (Optimized for memory)
     useEffect(() => {
+        startRender();
+        
         const updateViz = () => {
-            if (status.kind === 'processing') {
-                // Mock intensity when processing (thinking)
-                setAudioIntensity(0.2 + Math.sin(Date.now() / 200) * 0.1);
+            try {
+                if (status.kind === 'processing') {
+                    // Mock intensity when processing (thinking)
+                    setAudioIntensity(0.2 + Math.sin(Date.now() / 200) * 0.1);
+                    animationFrameRef.current = requestAnimationFrame(updateViz);
+                    return;
+                }
+
+                if (!analyserRef.current) {
+                    setAudioIntensity(0);
+                    if (status.kind !== 'idling') animationFrameRef.current = requestAnimationFrame(updateViz);
+                    return;
+                }
+
+                if (!dataArrayRef.current || dataArrayRef.current.length !== analyserRef.current.frequencyBinCount) {
+                    const newArray = new Uint8Array(new ArrayBuffer(analyserRef.current.frequencyBinCount));
+                    dataArrayRef.current = newArray;
+                }
+
+                analyserRef.current.getByteFrequencyData(dataArrayRef.current);
+
+                // Calculate Average Intensity (Bass heavy) - optimized loop
+                let sum = 0;
+                const binCount = Math.min(32, dataArrayRef.current.length); // Low freq only
+                for (let i = 0; i < binCount; i++) {
+                    sum += dataArrayRef.current[i];
+                }
+                const average = sum / binCount;
+                // Normalize 0-255 to 0-1
+                setAudioIntensity(average / 128.0);
+
                 animationFrameRef.current = requestAnimationFrame(updateViz);
-                return;
-            }
-
-            if (!analyserRef.current) {
+            } catch (error) {
+                enhancedErrorReporter.reportAudioError('visualization_loop', error as Error, analyserRef.current || undefined);
                 setAudioIntensity(0);
-                // Keep loop running to catch reconnects or status changes? 
-                // Better to simple check status
-                if (status.kind !== 'idling') animationFrameRef.current = requestAnimationFrame(updateViz);
-                return;
             }
-
-            if (!dataArrayRef.current || dataArrayRef.current.length !== analyserRef.current.frequencyBinCount) {
-                // Create new array with proper ArrayBuffer type to avoid SharedArrayBuffer issues
-                const newArray = new Uint8Array(new ArrayBuffer(analyserRef.current.frequencyBinCount));
-                dataArrayRef.current = newArray;
-            }
-
-            analyserRef.current.getByteFrequencyData(dataArrayRef.current);
-
-            // Calculate Average Intensity (Bass heavy) - optimized loop
-            let sum = 0;
-            const binCount = Math.min(32, dataArrayRef.current.length); // Low freq only
-            for (let i = 0; i < binCount; i++) {
-                sum += dataArrayRef.current[i];
-            }
-            const average = sum / binCount;
-            // Normalize 0-255 to 0-1
-            setAudioIntensity(average / 128.0);
-
-            animationFrameRef.current = requestAnimationFrame(updateViz);
         };
 
         if (status.kind !== 'idling') {
@@ -129,7 +132,6 @@ export function MainView() {
             }
         }
 
-        // Enhanced cleanup with proper memory management
         return () => {
             if (animationFrameRef.current) {
                 cancelAnimationFrame(animationFrameRef.current);
@@ -142,8 +144,9 @@ export function MainView() {
             }
             // Clear analyser reference
             analyserRef.current = null;
+            endRender();
         };
-    }, [status, inputMode, analyserRef]);
+    }, [status, inputMode, startRender, endRender]);
 
     // Force hide practices when switching to text mode
     useEffect(() => {
@@ -159,16 +162,20 @@ export function MainView() {
     };
 
     const toggleConnection = () => {
-        if (status.kind === 'idling') {
-            if (micStatus === 'granted') {
-                connect();
-            } else if (micStatus === 'denied') {
-                setSnackbar({ text: "Bạn đã từ chối quyền Micro. Vui lòng cấp lại trong cài đặt.", kind: "error" });
+        try {
+            if (status.kind === 'idling') {
+                if (micStatus === 'granted') {
+                    connect();
+                } else if (micStatus === 'denied') {
+                    setSnackbar({ text: "Bạn đã từ chối quyền Micro. Vui lòng cấp lại trong cài đặt.", kind: "error" });
+                } else {
+                    requestInitialPermissions().then(() => connect());
+                }
             } else {
-                requestInitialPermissions().then(() => connect());
+                disconnect();
             }
-        } else {
-            disconnect();
+        } catch (error) {
+            enhancedErrorReporter.reportComponentError('MainView', 'toggle_connection', error as Error);
         }
     };
 
@@ -183,10 +190,14 @@ export function MainView() {
     };
 
     const toggleInputMode = () => {
-        disconnect();
-        setInputMode(inputMode === 'voice' ? 'text' : 'voice');
-        setShowPractices(false); // Auto-hide practices when switching modes
-        haptic('selection');
+        try {
+            disconnect();
+            setInputMode(inputMode === 'voice' ? 'text' : 'voice');
+            setShowPractices(false); // Auto-hide practices when switching modes
+            haptic('selection');
+        } catch (error) {
+            enhancedErrorReporter.reportComponentError('MainView', 'toggle_input_mode', error as Error);
+        }
     };
 
     const handleModeChange = (mode: any, items: string[]) => {
@@ -202,14 +213,19 @@ export function MainView() {
     const handleSendText = async (text: string) => {
         if (!text.trim()) return;
 
-        // Removed hardcoded offline check to allow Offline AI service to handle it
-
-        const response = await sendText(text);
-        if (response) {
-            setInputText('');
-            if (detectEmergency(text) || detectEmergency(response.wisdom_text)) {
-                setEmergencyActive(true);
+        try {
+            const response = await sendText(text);
+            if (response) {
+                setInputText('');
+                if (detectEmergency(text) || detectEmergency(response.wisdom_text)) {
+                    setEmergencyActive(true);
+                }
             }
+        } catch (error) {
+            enhancedErrorReporter.reportComponentError('MainView', 'send_text', error as Error, {
+                userIntent: 'text_communication',
+                userInput: text
+            });
         }
     };
 
@@ -219,24 +235,15 @@ export function MainView() {
     };
 
     const handleResetSession = () => {
-        haptic('warn');
-        setZenData(null);
-        setInputText('');
-        setSnackbar({ text: "Bắt đầu phiên mới", kind: 'info' });
+        try {
+            haptic('warn');
+            setZenData(null);
+            setInputText('');
+            setSnackbar({ text: "Bắt đầu phiên mới", kind: 'info' });
+        } catch (error) {
+            enhancedErrorReporter.reportComponentError('MainView', 'reset_session', error as Error);
+        }
     };
-
-    // --- DEBUG: Loading State ---
-    useEffect(() => {
-        console.log('🜂 Loading state changed:', isLoading);
-    }, [isLoading]);
-
-    // --- DEBUG: Component Lifecycle ---
-    useEffect(() => {
-        console.log('🜂 MainView mounted successfully');
-        return () => {
-            console.log('🜂 MainView unmounting');
-        };
-    }, []);
 
     // Determine Orb Mode
     const orbMode = useMemo(() => {
@@ -277,18 +284,13 @@ export function MainView() {
                     {/* --- 3D SPACE --- */}
                     <div className="absolute inset-0 z-0 bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900">
                         {visualizationMode === 'soul' ? (
-                            <Canvas camera={{ position: [0, 0, 5], fov: 45 }}>
-                                <ambientLight intensity={0.5} />
-                                <pointLight position={[10, 10, 10]} intensity={1} color="#00f3ff" />
-                                <pointLight position={[-10, -10, -10]} intensity={0.5} color="#ffd700" />
-                                <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
-                                <Suspense fallback={<div className="text-white text-center">Loading...</div>}>
-                                    <SoulOrb mode={orbMode} intensity={audioIntensity} />
-                                </Suspense>
-                                <OrbitControls enableZoom={false} enablePan={false} autoRotate autoRotateSpeed={0.5} />
-                            </Canvas>
+                            <LazySoulOrb mode={orbMode} intensity={audioIntensity} />
                         ) : (
-                            <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center text-white">Loading Premium Viz...</div>}>
+                            <Suspense fallback={
+                                <div className="absolute inset-0 flex items-center justify-center text-white">
+                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-400"></div>
+                                </div>
+                            }>
                                 <OrbViz analyser={analyserRef.current} emotion={zenData?.emotion || 'neutral'} frequencyData={dataArrayRef.current || undefined} />
                             </Suspense>
                         )}
@@ -416,7 +418,7 @@ export function MainView() {
                             <div className="pointer-events-auto mb-4 bg-gray-800/90 backdrop-blur-xl rounded-[24px] p-2 shadow-[0_0_30px_rgba(0,0,0,0.5)] border border-white/10 animate-[slideUp_0.3s_ease-out] max-w-full origin-bottom">
                                 <MicroPractices
                                     onSelect={handlePracticeSelect}
-                                    disabled={status.kind !== 'idling'} // Enable offline too
+                                    disabled={status.kind !== 'idling'}
                                     lang={language}
                                 />
                             </div>

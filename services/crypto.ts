@@ -1,4 +1,6 @@
 
+import { deriveKeySecurely, encryptSecurely, decryptSecurely, secureZeroize, constantTimeCompare } from './secureCrypto';
+
 // Operation Vault: Zero-Knowledge Client-Side Encryption
 // Algorithm: AES-GCM 256-bit
 // Key Derivation: PBKDF2 (120k iterations - OWASP 2024 compliant)
@@ -120,11 +122,9 @@ export class VaultService {
   // --- SECURE ZEROIZATION ---
   private static secureZeroize() {
     if (this.masterKey) {
-      // Overlap key material with zeros
+      // Use secure zeroization from secureCrypto module
       if (this.keyMaterial) {
-        const view = new Uint8Array(this.keyMaterial);
-        view.fill(0);
-        crypto.subtle.importKey('raw', view, { name: 'AES-GCM' }, false, []).catch(() => { });
+        secureZeroize(this.keyMaterial);
       }
       this.masterKey = null;
       this.keyMaterial = null;
@@ -136,71 +136,25 @@ export class VaultService {
 
   static async encrypt(data: any): Promise<{ iv: Uint8Array, cipher: ArrayBuffer }> {
     if (!this.masterKey) throw new Error("VAULT_LOCKED");
-
-    const iv = window.crypto.getRandomValues(new Uint8Array(IV_LEN));
-    const encoded = new TextEncoder().encode(JSON.stringify(data));
-
-    const cipher = await window.crypto.subtle.encrypt(
-      { name: KEY_ALGO, iv },
-      this.masterKey,
-      encoded
-    );
-
-    return { iv, cipher };
+    return encryptSecurely(data, this.masterKey);
   }
 
   static async decrypt(iv: Uint8Array, cipher: ArrayBuffer): Promise<any> {
     if (!this.masterKey) throw new Error("VAULT_LOCKED");
-
-    try {
-      // Create new ArrayBuffer copy to avoid SharedArrayBuffer issues
-      const ivArray = new Uint8Array(iv);
-      const decrypted = await window.crypto.subtle.decrypt(
-        { name: KEY_ALGO, iv: ivArray },
-        this.masterKey,
-        cipher
-      );
-      return JSON.parse(new TextDecoder().decode(decrypted));
-    } catch (e) {
-      throw new Error("DECRYPT_FAILED");
-    }
+    return decryptSecurely(iv, cipher, this.masterKey);
   }
 
   // --- INTERNAL UTILS ---
 
   private static async deriveKeyFromPin(pin: string, salt: Uint8Array, purpose: 'wrap' | 'encrypt'): Promise<CryptoKey> {
-    const encoder = new TextEncoder();
-    const rawKeyData = encoder.encode(pin + purpose);
-
-    // Store key material for zeroization
+    // Store key material for zeroization (only for encrypt purpose)
     if (purpose === 'encrypt') {
-      // Create a copy for zeroization
-      this.keyMaterial = rawKeyData.buffer.slice(0);
+      const encoder = new TextEncoder();
+      this.keyMaterial = encoder.encode(pin + purpose).buffer;
     }
 
-    const baseKeyMaterial = await window.crypto.subtle.importKey(
-      'raw',
-      rawKeyData, // Purpose separation
-      { name: 'PBKDF2' },
-      false,
-      ['deriveKey']
-    );
-
-    // Create new Uint8Array copy to avoid SharedArrayBuffer issues
-    const saltCopy = new Uint8Array(salt);
-
-    return window.crypto.subtle.deriveKey(
-      {
-        name: 'PBKDF2',
-        salt: saltCopy,
-        iterations: PBKDF2_ITERATIONS,
-        hash: HASH_ALGO
-      },
-      baseKeyMaterial,
-      { name: KEY_ALGO, length: 256 },
-      purpose === 'wrap' ? false : true, // Wrapping key non-exportable
-      purpose === 'wrap' ? ['wrapKey', 'unwrapKey'] : ['encrypt', 'decrypt']
-    );
+    // Use secure key derivation
+    return deriveKeySecurely(pin, salt, purpose);
   }
 
   private static async openDB(): Promise<IDBDatabase> {

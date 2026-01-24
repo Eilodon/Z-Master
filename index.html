@@ -3,12 +3,29 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Thầy.AI</title>
   <meta name="description"
     content="Đồng hành tâm linh với AI - Thầy.AI mang trí tuệ Thích Nhất Hạnh đến với bạn qua công nghệ">
   <meta name="keywords" content="thiền, mindfulness, Thích Nhất Hạnh, meditation, mental health, AI, Vietnam">
-  <meta name="theme-color" content="#f97316">
+  <!-- Browser-specific theme colors (Firefox doesn't support theme-color) -->
+  <meta name="msapplication-TileColor" content="#f97316">
+  <meta name="msapplication-navbutton-color" content="#f97316">
+  <!-- Apple Safari fallback -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <!-- Opera fallback -->
+  <meta name="color-scheme" content="dark">
+  <!-- Legacy browser support -->
+  <style>
+    /* Fallback for very old browsers */
+    body {
+      background-color: #111827;
+    }
+  </style>
+  
+  <!-- Apple Touch Icon -->
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪷</text></svg>">
 
   <!-- Optimization Hints -->
   <link rel="preconnect" href="https://aistudiocdn.com" crossorigin>
@@ -120,7 +137,25 @@
 
     .no-scrollbar {
       -ms-overflow-style: none;
-      scrollbar-width: none;
+      /* scrollbar-width: none; */ /* Commented out for broader compatibility */
+      /* Fallback for browsers that don't support scrollbar-width */
+    }
+    
+    /* Modern browsers that support scrollbar-width */
+    @supports (scrollbar-width: none) {
+      .no-scrollbar {
+        scrollbar-width: none;
+      }
+    }
+    
+    /* Fallback for older browsers */
+    @supports not (scrollbar-width: none) {
+      .no-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      .no-scrollbar {
+        overflow: -moz-scrollbars-none;
+      }
     }
 
     /* Custom Scrollbar for history */

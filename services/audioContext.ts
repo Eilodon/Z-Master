@@ -1,5 +1,6 @@
 
 import * as Tone from 'tone';
+import { audioContextManager } from './audioContextManager';
 
 // Singleton instance
 let sharedContext: AudioContext | null = null;
@@ -9,29 +10,8 @@ let sharedContext: AudioContext | null = null;
  * Ensures compatibility between native Web Audio API and Tone.js.
  * This is the "Single Source of Truth" for audio.
  */
-export const getSharedAudioContext = async (): Promise<AudioContext> => {
-  if (!sharedContext) {
-    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-    sharedContext = new AudioContextClass({
-      // REMOVED sampleRate: 24000 to avoid OverconstrainedError on mobile devices.
-      // Let browser/hardware decide the native rate (44.1k/48k).
-      latencyHint: 'interactive'
-    });
-    
-    // CRITICAL: Sync Tone.js to use this same context
-    Tone.setContext(sharedContext);
-    console.log("Audio Context Initialized & Synced with Tone.js");
-  }
-
-  if (sharedContext.state === 'suspended') {
-    try {
-      await sharedContext.resume();
-    } catch (e) {
-      console.warn("Audio Context resume failed (waiting for user gesture)", e);
-    }
-  }
-
-  return sharedContext;
+export const getSharedAudioContext = () => {
+  return audioContextManager.getSharedContext();
 };
 
 export const closeSharedAudioContext = async () => {

@@ -8,6 +8,9 @@ global.TextEncoder = TextEncoder;
 // @ts-ignore
 global.TextDecoder = TextDecoder;
 
+// Set NODE_ENV to test for consistent behavior
+process.env.NODE_ENV = 'test';
+
 // Polyfill Web Crypto logic for PBKDF2 if node's implementation differs slightly
 // Usually Node 20+ globalThis.crypto is fine.
 

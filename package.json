@@ -1,5 +1,5 @@
 {
-  "name": "thầy.ai-49",
+  "name": "thay-ai-49",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -24,8 +24,8 @@
     "happy-dom": "^20.3.7",
     "lucide-react": "^0.559.0",
     "onnxruntime-web": "1.17.1",
-    "react": "^19.2.1",
-    "react-dom": "^19.2.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "scheduler": "^0.23.2",
     "sentiment": "^5.0.2",
     "three": "^0.170.0",
@@ -37,8 +37,8 @@
   "devDependencies": {
     "@testing-library/user-event": "^14.6.1",
     "@types/node": "^22.14.0",
-    "@types/react": "^19.2.9",
-    "@types/react-dom": "^19.2.3",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
     "@types/sentiment": "^5.0.4",
     "@vitejs/plugin-react": "^5.0.0",
     "@vitest/coverage-v8": "^4.0.18",

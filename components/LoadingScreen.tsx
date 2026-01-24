@@ -29,6 +29,35 @@ export const LoadingScreen: React.FC<Props> = ({ onComplete, onStartInteraction 
     return () => clearInterval(interval);
   }, []);
 
+  // Create CSS classes dynamically
+  const progressClasses = `h-full bg-gradient-to-r from-orange-500 to-red-500 transition-all duration-300 ease-out`;
+  const progressContainerClasses = `w-full h-2 bg-stone-200 rounded-full overflow-hidden`;
+  const progressWrapperClasses = `h-14 flex items-center justify-center relative w-64`;
+  
+  // Add inline style to document head for dynamic width
+  useEffect(() => {
+    const styleId = 'progress-bar-style';
+    let styleElement = document.getElementById(styleId) as HTMLStyleElement;
+    
+    if (!styleElement) {
+      styleElement = document.createElement('style');
+      styleElement.id = styleId;
+      document.head.appendChild(styleElement);
+    }
+    
+    styleElement.textContent = `
+      .progress-bar-dynamic {
+        width: ${progress}% !important;
+      }
+    `;
+    
+    return () => {
+      if (styleElement && styleElement.parentNode) {
+        styleElement.parentNode.removeChild(styleElement);
+      }
+    };
+  }, [progress]);
+
   const handleStart = async () => {
     // 1. Trigger permission request immediately while user click context is active
     if (onStartInteraction) {
@@ -70,12 +99,11 @@ export const LoadingScreen: React.FC<Props> = ({ onComplete, onStartInteraction 
       </p>
 
       {/* Progress Bar / Start Button Swap */}
-      <div className="h-14 flex items-center justify-center relative w-64">
+      <div className={progressWrapperClasses}>
         {!isReady ? (
-          <div className="w-full h-2 bg-stone-200 rounded-full overflow-hidden">
+          <div className={progressContainerClasses}>
             <div
-              className="h-full bg-gradient-to-r from-orange-500 to-red-500 transition-all duration-300 ease-out"
-              style={{ width: `${progress}%` }}
+              className={`${progressClasses} progress-bar-dynamic`}
             />
           </div>
         ) : (
