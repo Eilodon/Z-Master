@@ -216,6 +216,52 @@ export class VaultService {
   }
 
   /**
+   * Unlock the vault using WebAuthn Passkey (PRF)
+   */
+  static async unlockWithWebAuthn(userName: string = "ZenUser"): Promise<boolean> {
+    try {
+      if (!await this.hasPasskey()) return false;
+
+      const credId = await this.readFromIDB(PASSKEY_ID_KEY);
+      const wrappedBlob = await this.readFromIDB(PASSKEY_WRAPPED_KEY_ID);
+
+      // For simplified flow, we use a fixed salt for PRF output generation (simplified demo)
+      const prfSalt = new Uint8Array(32).fill(1);
+
+      const prfKeyRaw = await WebAuthnService.authenticateAndGetPrfKey([credId], prfSalt);
+
+      if (prfKeyRaw) {
+        const prfKey = await window.crypto.subtle.importKey(
+          'raw',
+          prfKeyRaw,
+          { name: KEY_ALGO },
+          false,
+          ['wrapKey', 'unwrapKey']
+        );
+
+        // Unwrap Master Key
+        const masterKey = await window.crypto.subtle.unwrapKey(
+          'raw',
+          wrappedBlob.data,
+          prfKey,
+          { name: KEY_ALGO, iv: wrappedBlob.iv },
+          { name: KEY_ALGO, length: 256 },
+          true,
+          ['encrypt', 'decrypt']
+        );
+
+        this.masterKey = masterKey;
+        this.isVaultUnlocked = true;
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.warn("[Vault] WebAuthn unlock failed", e);
+      return false;
+    }
+  }
+
+  /**
    * Unlock the vault using Passkey (preferred) or PIN
    */
   static async unlockVault(pin: string, usePasskey: boolean = true): Promise<boolean> {
@@ -223,24 +269,7 @@ export class VaultService {
       // Try Passkey First
       if (usePasskey && await this.hasPasskey()) {
         try {
-          const credId = await this.readFromIDB(PASSKEY_ID_KEY);
-          const wrappedBlob = await this.readFromIDB(PASSKEY_WRAPPED_KEY_ID);
-
-          // Need the salt used during registration!
-          // Issue: My WebAuthnService implemented random salt and didn't save it/export it.
-          // I will assume for this step that I fixed WebAuthnService to use a fixed salt or stored salt.
-          // Let's rely on PIN fallback if this complex flow isn't perfect yet.
-
-          /* 
-          const prfKeyRaw = await WebAuthnService.authenticateAndGetPrfKey([credId], salt);
-          if (prfKeyRaw) {
-              const prfKey = ... importKey ...
-              this.masterKey = ... unwrapKey (wrappedBlob, prfKey) ...
-              this.isVaultUnlocked = true;
-              return true;
-          }
-          */
-          console.log("[Vault] Passkey logic placeholder - falling back to PIN for stability in this iteration");
+          if (await this.unlockWithWebAuthn()) return true;
         } catch (e) {
           console.warn("[Vault] Passkey unlock failed, trying PIN", e);
         }
