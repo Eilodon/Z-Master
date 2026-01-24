@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { BookOpen, TrendingUp, Target, AlertTriangle, X } from 'lucide-react';
 import { ConversationMemory } from '../types';
 import { ConversationMemoryService } from '../services/conversationMemoryService';
+import { getWidthClass } from '../src/utils/progressUtils';
 
 interface Props {
   isOpen: boolean;
@@ -18,6 +19,27 @@ export const NarrativeMemory: React.FC<Props> = ({ isOpen, onClose, language }) 
       loadMemory();
     }
   }, [isOpen]);
+
+  // Handle click outside to close
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
+  // Handle ESC key
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    if (isOpen) {
+      window.addEventListener('keydown', handleEsc);
+    }
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [onClose, isOpen]);
 
   const loadMemory = async () => {
     setLoading(true);
@@ -55,21 +77,31 @@ export const NarrativeMemory: React.FC<Props> = ({ isOpen, onClose, language }) 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4"
+      onClick={handleBackdropClick}
+    >
+      <div 
+        className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto border border-white/20 relative animate-[scaleIn_0.3s_ease-out]"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
-        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-6 rounded-t-2xl sticky top-0 z-10">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <BookOpen size={24} />
-              <h2 className="text-2xl font-bold">{text.title}</h2>
+        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-6 rounded-t-3xl relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent"></div>
+          <div className="relative z-10">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <BookOpen size={24} />
+                <h2 className="text-2xl font-bold">{text.title}</h2>
+              </div>
+              <button
+                onClick={onClose}
+                className="p-2 rounded-full hover:bg-white/20 transition-all backdrop-blur-sm"
+                aria-label="Close memory"
+              >
+                <X size={20} />
+              </button>
             </div>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-full hover:bg-white/20 transition-colors"
-            >
-              <X size={20} />
-            </button>
           </div>
         </div>
 
@@ -174,8 +206,7 @@ export const NarrativeMemory: React.FC<Props> = ({ isOpen, onClose, language }) 
                           </div>
                           <div className="w-full bg-stone-200 rounded-full h-1.5">
                             <div
-                              className="h-full bg-amber-500 rounded-full transition-all"
-                              style={{ width: `${intensity * 100}%` }}
+                              className={`h-full bg-amber-500 rounded-full progress-bar-fill ${getWidthClass(intensity * 100)}`}
                             />
                           </div>
                         </div>

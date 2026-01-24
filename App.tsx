@@ -4,6 +4,7 @@ import { dbService } from './services/db';
 import { useZenStore } from './store/zenStore';
 import { ExtremeErrorBoundary } from './components/ExtremeErrorBoundary';
 import { CryptoErrorBoundary } from './components/CryptoErrorBoundary';
+import { TestDashboard } from './test/TestDashboard';
 
 export default function App() {
   const { setHistory } = useZenStore();
@@ -15,8 +16,7 @@ export default function App() {
         const entries = await dbService.getAllEntries();
         setHistory(entries);
       } catch (error) {
-        console.error("DB Load failed - this is normal if vault is locked:", error);
-        // Don't throw error - it's normal when vault is locked
+        console.error('Failed to load history:', error);
       }
     };
 
@@ -27,6 +27,7 @@ export default function App() {
     <ExtremeErrorBoundary name="App-Level" severity="critical">
       <CryptoErrorBoundary>
         <MainView />
+        <TestDashboard />
       </CryptoErrorBoundary>
     </ExtremeErrorBoundary>
   );

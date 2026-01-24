@@ -67,23 +67,23 @@ export const PHQ4Tracker: React.FC<Props> = ({ language }) => {
         {/* Assessment Button */}
         <button
           onClick={() => setShowAssessment(true)}
-          className={`relative group p-3 rounded-full shadow-lg transition-all ${
+          className={`relative group p-3 rounded-full shadow-lg transition-all transform hover:scale-105 ${
             shouldTake
-              ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white animate-pulse'
-              : 'bg-white/90 backdrop-blur-md hover:bg-white text-stone-700 border border-stone-200'
+              ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white animate-pulse animate-glow'
+              : 'glass-card hover:bg-white/20 text-stone-700 border border-stone-200/50'
           }`}
           aria-label={text.takeAssessment}
         >
-          <ClipboardCheck size={20} />
+          <ClipboardCheck size={20} className={shouldTake ? 'animate-bounce-subtle' : ''} />
           {shouldTake && (
-            <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>
+            <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse-slow"></span>
           )}
 
-          {/* Tooltip */}
-          <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-stone-800 text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+          {/* Enhanced Tooltip */}
+          <span className="absolute right-full mr-3 top-1/2 -translate-y-1/2 px-3 py-1.5 glass-card text-white text-xs rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all pointer-events-none animate-slideIn">
             {text.takeAssessment}
             {shouldTake && (
-              <span className="ml-2 text-yellow-300">• {text.recommended}</span>
+              <span className="ml-2 text-yellow-300 animate-wave">• {text.recommended}</span>
             )}
           </span>
         </button>
@@ -92,16 +92,18 @@ export const PHQ4Tracker: React.FC<Props> = ({ language }) => {
         {latestResult && (
           <button
             onClick={() => setShowResults(true)}
-            className={`p-3 rounded-full shadow-lg transition-all border ${getSeverityColor(latestResult.severity)} hover:shadow-xl`}
+            className={`p-3 rounded-full shadow-lg transition-all border transform hover:scale-105 hover:shadow-xl ${getSeverityColor(latestResult.severity)}`}
             aria-label={text.viewResults}
           >
-            {summary?.trend === 'improving' && <TrendingDown size={20} />}
-            {summary?.trend === 'worsening' && <TrendingUp size={20} />}
-            {(summary?.trend === 'stable' || !summary?.trend) && <AlertCircle size={20} />}
-
-            <span className="absolute -top-1 -left-1 text-[10px] font-bold bg-white rounded-full w-5 h-5 flex items-center justify-center shadow-sm">
-              {latestResult.total_score}
-            </span>
+            <div className="relative">
+              {summary?.trend === 'improving' && <TrendingDown size={20} className="animate-bounce-subtle" />}
+              {summary?.trend === 'worsening' && <TrendingUp size={20} className="animate-pulse-slow" />}
+              {(summary?.trend === 'stable' || !summary?.trend) && <AlertCircle size={20} className="animate-pulse-slow" />}
+              
+              <span className="absolute -top-1 -left-1 text-[10px] font-bold bg-white rounded-full w-5 h-5 flex items-center justify-center shadow-sm animate-glow">
+                {latestResult.total_score}
+              </span>
+            </div>
           </button>
         )}
       </div>

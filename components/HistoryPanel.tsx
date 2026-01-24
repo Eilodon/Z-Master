@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { History, TrendingUp, X, Trash2, Brain, Map } from 'lucide-react';
 import { ConversationEntry } from '../types';
 import { dbService } from '../services/db';
+import { getWidthClass } from '../src/utils/progressUtils';
 
 interface Props {
   history: ConversationEntry[];
@@ -10,6 +11,25 @@ interface Props {
 
 export const HistoryPanel: React.FC<Props> = ({ history, onClear }) => {
   const [isOpen, setIsOpen] = useState(false);
+
+  // Handle click outside to close
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      setIsOpen(false);
+    }
+  };
+
+  // Handle ESC key
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        setIsOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [isOpen]);
 
   // Memoize the heavy analysis logic so it doesn't run on every render
   const analysis = useMemo(() => {
@@ -28,48 +48,37 @@ export const HistoryPanel: React.FC<Props> = ({ history, onClear }) => {
     const avgEmotionalRegulation = displayData.reduce((sum, e) => sum + safeMetric(e, 'emotional_regulation'), 0) / (displayData.length || 1);
 
     // DETERMINE MINDFULNESS PROFILE (clinically based)
-    let profileTitle = "Developing Awareness";
-    let description = "Bạn đang xây dựng nền tảng chánh niệm.";
-
-    if (avgPresentMomentAwareness > 0.7 && avgAttentionStability > 0.7) {
-        profileTitle = "Strong Practice"; // High discipline
-        description = "Bạn đã phát triển khả năng định tâm vững chãi.";
-    } else if (avgEmotionalRegulation > 0.7) {
-        profileTitle = "Emotional Balance"; // High regulation
-        description = "Bạn điều tiết cảm xúc một cách khéo léo.";
-    } else if (avgAttentionStability > 0.8) {
-        profileTitle = "Focused Attention"; // High attention
-        description = "Bạn có khả năng tập trung ổn định tốt.";
+    let profileTitle = "Beginning";
+    let description = "Starting your mindfulness journey";
+    
+    if (avgPresentMomentAwareness >= 0.7 && avgEmotionalRegulation >= 0.7 && avgAttentionStability >= 0.7) {
+      profileTitle = "Advanced";
+      description = "Deep mindfulness practice established";
+    } else if (avgPresentMomentAwareness >= 0.5 && avgEmotionalRegulation >= 0.5 && avgAttentionStability >= 0.5) {
+      profileTitle = "Intermediate";
+      description = "Building consistent mindfulness habits";
+    } else if (avgPresentMomentAwareness >= 0.3 || avgEmotionalRegulation >= 0.3 || avgAttentionStability >= 0.3) {
+      profileTitle = "Developing";
+      description = "Early progress in mindfulness practice";
     }
 
     return {
-      displayData,
+      profileTitle,
+      description,
       avgAttentionStability,
       avgPresentMomentAwareness,
       avgEmotionalRegulation,
-      profileTitle,
-      description
+      displayData
     };
   }, [history]);
 
   if (!analysis) return null;
 
-  const { displayData, avgAttentionStability, avgPresentMomentAwareness, avgEmotionalRegulation, profileTitle, description } = analysis;
+  const { profileTitle, description, avgAttentionStability, avgPresentMomentAwareness, avgEmotionalRegulation, displayData } = analysis;
 
-  const emotionColor = {
-    anxious: 'border-orange-400 bg-orange-50',
-    sad: 'border-blue-400 bg-blue-50',
-    joyful: 'border-yellow-400 bg-yellow-50',
-    calm: 'border-emerald-400 bg-emerald-50',
-    neutral: 'border-stone-300 bg-stone-50'
-  };
-
-  const handleClear = async () => {
-    if (window.confirm('Xóa toàn bộ lịch sử? (Không thể hoàn tác)')) {
-      await dbService.clearAll();
-      onClear(); 
-      setIsOpen(false);
-    }
+  const handleClear = () => {
+    onClear();
+    setIsOpen(false);
   };
 
   return (
@@ -83,71 +92,83 @@ export const HistoryPanel: React.FC<Props> = ({ history, onClear }) => {
       </button>
 
       {isOpen && (
-        <div className="absolute top-20 right-4 z-50 w-80 max-h-[70vh] flex flex-col bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-stone-100 animate-[fadeIn_0.3s_ease-out]">
-          {/* Header */}
-          <div className="bg-gradient-to-r from-stone-800 to-stone-900 text-amber-50 p-4 rounded-t-2xl flex items-center justify-between shadow-sm">
-            <div className="flex items-center gap-2">
-              <Brain size={18} className="text-amber-400" />
-              <h3 className="font-bold text-sm tracking-wide uppercase">Mindfulness Profile</h3>
+        <div 
+          className="fixed inset-0 z-50 flex items-start justify-center pt-20 bg-black/40 backdrop-blur-sm p-4"
+          onClick={handleBackdropClick}
+        >
+          <div 
+            className="w-full max-w-md bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-stone-100 animate-[scaleIn_0.3s_ease-out] max-h-[70vh] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="bg-gradient-to-r from-stone-800 to-stone-900 text-amber-50 p-4 flex items-center justify-between shadow-sm">
+              <div className="flex items-center gap-2">
+                <Brain size={18} className="text-amber-400" />
+                <h3 className="font-bold text-sm tracking-wide uppercase">Mindfulness Profile</h3>
+              </div>
+              <button 
+                onClick={() => setIsOpen(false)} 
+                className="hover:bg-white/10 rounded-full p-1 transition-colors"
+                aria-label="Close history"
+              >
+                <X size={18} />
+              </button>
             </div>
-            <button onClick={() => setIsOpen(false)} className="hover:bg-white/10 rounded-full p-1 transition-colors">
-              <X size={18} />
-            </button>
-          </div>
 
-          {/* Mindfulness Profile (Clinical Metrics) */}
-          <div className="bg-stone-50 p-5 border-b border-stone-200">
-             <div className="text-center mb-3">
-                <span className="text-[10px] uppercase tracking-[0.2em] text-stone-400">Practice Level</span>
-                <h4 className="text-xl font-serif font-bold text-stone-800 mt-1">{profileTitle}</h4>
-                <p className="text-xs text-stone-500 italic mt-1">{description}</p>
-             </div>
+            {/* Mindfulness Profile (Clinical Metrics) */}
+            <div className="bg-stone-50 p-5 border-b border-stone-200">
+               <div className="text-center mb-3">
+                  <span className="text-[10px] uppercase tracking-[0.2em] text-stone-400">Practice Level</span>
+                  <h4 className="text-xl font-serif font-bold text-stone-800 mt-1">{profileTitle}</h4>
+                  <p className="text-xs text-stone-500 italic mt-1">{description}</p>
+               </div>
 
-             {/* Mindfulness Metrics Bar Chart */}
-             <div className="space-y-2 mt-4">
-                <DnaBar label="Present Moment" value={avgPresentMomentAwareness} color="bg-emerald-500" />
-                <DnaBar label="Emotion Regulation" value={avgEmotionalRegulation} color="bg-purple-500" />
-                <DnaBar label="Attention" value={avgAttentionStability} color="bg-blue-500" />
-             </div>
-          </div>
-
-          {/* History list */}
-          <div className="overflow-y-auto p-4 space-y-3 flex-1 custom-scrollbar">
-            <div className="flex items-center gap-2 mb-2 text-stone-400">
-               <TrendingUp size={12} />
-               <span className="text-[10px] uppercase font-bold tracking-wider">Journey Log</span>
+               {/* Mindfulness Metrics Bar Chart */}
+               <div className="space-y-2 mt-4">
+                  <DnaBar label="Present Moment" value={avgPresentMomentAwareness} color="bg-emerald-500" />
+                  <DnaBar label="Emotion Regulation" value={avgEmotionalRegulation} color="bg-purple-500" />
+                  <DnaBar label="Attention" value={avgAttentionStability} color="bg-blue-500" />
+               </div>
             </div>
-            
-            {[...displayData].reverse().map((entry) => {
-              const date = new Date(entry.timestamp);
-              const isToday = date.toDateString() === new Date().toDateString();
-              const timeStr = isToday 
-                ? date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) 
-                : date.toLocaleDateString('vi-VN', { month: 'numeric', day: 'numeric' });
-              
-              return (
-                <div key={entry.id} className={`border-l-[3px] ${emotionColor[entry.emotion] || emotionColor.neutral} rounded-r-lg p-3 transition-all hover:bg-stone-50`}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] font-bold text-stone-600 uppercase tracking-widest">{entry.emotion}</span>
-                    <span className="text-[10px] text-stone-400 font-mono">{timeStr}</span>
-                  </div>
-                  <div className="flex gap-3 text-[10px] font-medium opacity-80">
-                    <span className="text-blue-600">Attn: {Math.round((entry.mindfulness_metrics?.attention_stability || 0) * 100)}</span>
-                    <span className="text-purple-600">Reg: {Math.round((entry.mindfulness_metrics?.emotional_regulation || 0) * 100)}</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
 
-          {/* Clear button */}
-          <div className="border-t border-stone-100 p-3 bg-stone-50/50 rounded-b-2xl">
-            <button
-              onClick={handleClear}
-              className="w-full py-2 text-xs font-medium text-stone-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center justify-center gap-2"
-            >
-              <Trash2 size={14} /> Xóa lịch sử
-            </button>
+            {/* History list */}
+            <div className="overflow-y-auto p-4 space-y-3 flex-1 custom-scrollbar">
+              <div className="flex items-center gap-2 mb-2 text-stone-400">
+                 <TrendingUp size={12} />
+                 <span className="text-[10px] uppercase font-bold tracking-wider">Journey Log</span>
+              </div>
+              {displayData.map((entry, idx) => {
+                const timeStr = new Date(entry.timestamp).toLocaleTimeString('en-US', { 
+                  hour: '2-digit', 
+                  minute: '2-digit' 
+                });
+                return (
+                  <div
+                    key={entry.id}
+                    className="bg-white border border-stone-200 rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-bold text-stone-600 uppercase tracking-widest">{entry.emotion}</span>
+                      <span className="text-[10px] text-stone-400 font-mono">{timeStr}</span>
+                    </div>
+                    <div className="flex gap-3 text-[10px] font-medium opacity-80">
+                      <span className="text-blue-600">Attn: {Math.round((entry.mindfulness_metrics?.attention_stability || 0) * 100)}</span>
+                      <span className="text-purple-600">Reg: {Math.round((entry.mindfulness_metrics?.emotional_regulation || 0) * 100)}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Clear button */}
+            <div className="border-t border-stone-100 p-3 bg-stone-50/50 rounded-b-2xl">
+              <button
+                onClick={handleClear}
+                className="w-full py-2 text-xs font-medium text-stone-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center justify-center gap-2"
+              >
+                <Trash2 size={14} /> Clear History
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -160,8 +181,7 @@ const DnaBar = ({ label, value, color }: { label: string, value: number, color: 
         <span className="text-[10px] font-bold text-stone-400 w-16 text-right">{label}</span>
         <div className="flex-1 h-1.5 bg-stone-200 rounded-full overflow-hidden">
             <div 
-                className={`h-full ${color} rounded-full`} 
-                style={{ width: `${value * 100}%` }}
+                className={`h-full ${color} rounded-full dna-bar-fill ${getWidthClass(value * 100)}`}
             />
         </div>
     </div>

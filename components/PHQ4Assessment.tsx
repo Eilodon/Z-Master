@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ClipboardCheck, AlertCircle, TrendingUp } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ClipboardCheck, AlertCircle, TrendingUp, X } from 'lucide-react';
 import { PHQ4Response, PHQ4Result } from '../types';
 
 interface Props {
@@ -15,6 +15,25 @@ export const PHQ4Assessment: React.FC<Props> = ({ onComplete, onClose, language 
     q3_nervous: -1,
     q4_worry: -1
   });
+
+  // Handle click outside to close
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
+  // Handle ESC key
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
 
   const questions = language === 'vi' ? {
     title: "Đánh Giá Sức Khỏe Tâm Lý",
@@ -92,21 +111,54 @@ export const PHQ4Assessment: React.FC<Props> = ({ onComplete, onClose, language 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4"
+      onClick={handleBackdropClick}
+    >
+      <div 
+        className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-white/20 relative animate-[scaleIn_0.3s_ease-out]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Close Button */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 z-10 p-2 rounded-full bg-white/10 hover:bg-white/20 text-gray-600 hover:text-gray-800 transition-all backdrop-blur-sm"
+          aria-label="Close assessment"
+        >
+          <X size={20} />
+        </button>
+
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6 rounded-t-2xl">
-          <div className="flex items-center gap-3 mb-2">
-            <ClipboardCheck size={24} />
-            <h2 className="text-xl font-bold">{questions.title}</h2>
+        <div className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white p-8 rounded-t-3xl relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-purple-500/10"></div>
+          <div className="relative z-10">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="p-3 bg-white/10 rounded-2xl backdrop-blur-sm">
+                <ClipboardCheck size={28} className="text-blue-300" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight">{questions.title}</h2>
+                <p className="text-blue-200 text-sm mt-1 leading-relaxed">{questions.subtitle}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 mt-4">
+              <div className="h-px bg-blue-400 flex-1"></div>
+              <div className="px-3 py-1 bg-blue-500/20 rounded-full text-xs text-blue-300 font-medium">PHQ-4</div>
+              <div className="h-px bg-blue-400 flex-1"></div>
+            </div>
           </div>
-          <p className="text-blue-100 text-sm">{questions.subtitle}</p>
         </div>
 
         {/* Questions */}
-        <div className="p-6 space-y-6">
+        <div className="p-8 space-y-8">
           {/* Depression Questions */}
-          <div className="space-y-4">
+          <div className="space-y-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-500 rounded-lg flex items-center justify-center">
+                <span className="text-white text-sm font-bold">D</span>
+              </div>
+              <h3 className="text-lg font-semibold text-slate-800">{language === 'vi' ? 'Trầm cảm' : 'Depression'}</h3>
+            </div>
             <QuestionCard
               number={1}
               question={questions.q1}
@@ -123,10 +175,25 @@ export const PHQ4Assessment: React.FC<Props> = ({ onComplete, onClose, language 
             />
           </div>
 
-          <div className="border-t border-stone-200 my-4"></div>
+          <div className="relative my-8">
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-full h-px bg-gradient-to-r from-transparent via-slate-300 to-transparent"></div>
+            </div>
+            <div className="relative flex justify-center">
+              <div className="px-4 py-2 bg-slate-100 rounded-full">
+                <span className="text-xs font-medium text-slate-500">{language === 'vi' ? 'Lo lắng' : 'Anxiety'}</span>
+              </div>
+            </div>
+          </div>
 
           {/* Anxiety Questions */}
-          <div className="space-y-4">
+          <div className="space-y-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-lg flex items-center justify-center">
+                <span className="text-white text-sm font-bold">A</span>
+              </div>
+              <h3 className="text-lg font-semibold text-slate-800">{language === 'vi' ? 'Lo lắng' : 'Anxiety'}</h3>
+            </div>
             <QuestionCard
               number={3}
               question={questions.q3}
@@ -144,34 +211,50 @@ export const PHQ4Assessment: React.FC<Props> = ({ onComplete, onClose, language 
           </div>
 
           {/* Info Note */}
-          <div className="flex gap-3 bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <AlertCircle size={20} className="text-blue-600 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-blue-800">
-              {language === 'vi'
-                ? "PHQ-4 là bài đánh giá sàng lọc ngắn gọn, được chứng minh lâm sàng. Kết quả không thay thế chẩn đoán chuyên nghiệp."
-                : "PHQ-4 is a brief, clinically validated screening. Results do not replace professional diagnosis."}
-            </p>
+          <div className="flex gap-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/60 rounded-2xl p-6 shadow-sm">
+            <div className="flex-shrink-0">
+              <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
+                <AlertCircle size={20} className="text-white" />
+              </div>
+            </div>
+            <div>
+              <p className="text-sm text-blue-900 leading-relaxed font-medium">
+                {language === 'vi'
+                  ? "PHQ-4 là bài đánh giá sàng lọc ngắn gọn, được chứng minh lâm sàng. Kết quả không thay thế chẩn đoán chuyên nghiệp."
+                  : "PHQ-4 is a brief, clinically validated screening. Results do not replace professional diagnosis."}
+              </p>
+              <p className="text-xs text-blue-700 mt-2">
+                {language === 'vi' ? '⏱️ Khoảng 2 phút để hoàn thành' : '⏱️ Takes about 2 minutes to complete'}
+              </p>
+            </div>
           </div>
         </div>
 
         {/* Actions */}
-        <div className="border-t border-stone-200 p-4 flex gap-3">
+        <div className="border-t border-slate-200/60 p-6 flex gap-4 bg-slate-50/50 rounded-b-3xl">
           <button
             onClick={onClose}
-            className="flex-1 py-3 px-4 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 font-medium transition-colors"
+            className="flex-1 py-4 px-6 rounded-2xl bg-white hover:bg-slate-50 text-slate-700 font-medium transition-all border border-slate-200 hover:border-slate-300 shadow-sm hover:shadow-md"
           >
             {questions.cancel}
           </button>
           <button
             onClick={handleSubmit}
             disabled={!isComplete}
-            className={`flex-1 py-3 px-4 rounded-lg font-medium transition-all ${
+            className={`flex-1 py-4 px-6 rounded-2xl font-medium transition-all shadow-lg hover:shadow-xl ${
               isComplete
-                ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg'
-                : 'bg-stone-200 text-stone-400 cursor-not-allowed'
+                ? 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border border-transparent transform hover:scale-[1.02]'
+                : 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
             }`}
           >
-            {questions.submit}
+            {isComplete ? (
+              <span className="flex items-center justify-center gap-2">
+                {questions.submit}
+                <ClipboardCheck size={18} />
+              </span>
+            ) : (
+              questions.submit
+            )}
           </button>
         </div>
       </div>
@@ -189,25 +272,32 @@ interface QuestionCardProps {
 
 const QuestionCard: React.FC<QuestionCardProps> = ({ number, question, selected, onSelect, options }) => {
   return (
-    <div className="space-y-3">
-      <div className="flex items-start gap-3">
-        <span className="flex-shrink-0 w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 font-bold text-sm flex items-center justify-center">
+    <div className="space-y-4 bg-white rounded-2xl p-6 border border-slate-200/60 shadow-sm hover:shadow-md transition-all">
+      <div className="flex items-start gap-4">
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 text-slate-700 font-bold text-sm flex items-center justify-center border border-slate-300">
           {number}
-        </span>
-        <p className="text-sm font-medium text-stone-800 leading-relaxed">{question}</p>
+        </div>
+        <p className="text-base font-medium text-slate-800 leading-relaxed flex-1">{question}</p>
       </div>
-      <div className="grid grid-cols-2 gap-2 ml-9">
+      <div className="grid grid-cols-2 gap-3 ml-12">
         {options.map((option, idx) => (
           <button
             key={idx}
             onClick={() => onSelect(idx)}
-            className={`py-2.5 px-3 rounded-lg text-xs font-medium transition-all border-2 ${
+            className={`py-3 px-4 rounded-xl text-sm font-medium transition-all border-2 transform hover:scale-[1.02] ${
               selected === idx
-                ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm'
-                : 'bg-white border-stone-200 text-stone-600 hover:border-indigo-200 hover:bg-indigo-50/50'
+                ? 'bg-gradient-to-r from-blue-500 to-purple-500 border-blue-500 text-white shadow-lg shadow-blue-500/25'
+                : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50/50 hover:text-slate-800'
             }`}
           >
-            {option}
+            <span className="flex items-center justify-center gap-2">
+              {selected === idx && (
+                <div className="w-4 h-4 bg-white rounded-full flex items-center justify-center">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                </div>
+              )}
+              {option}
+            </span>
           </button>
         ))}
       </div>

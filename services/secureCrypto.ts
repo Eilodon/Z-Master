@@ -16,26 +16,40 @@ export function constantTimeCompare(a: string, b: string): boolean {
 }
 
 // Secure PIN validation with constant-time comparison
-export function validatePinSecurely(inputPin: string, storedPinHash: string): boolean {
-  // In a real implementation, you'd hash the input PIN and compare hashes
-  // For this demo, we'll use constant-time string comparison
-  // In production, use proper password hashing like Argon2 or scrypt
-  
-  // Hash the input PIN (simplified - use proper hashing in production)
-  const inputHash = simpleHash(inputPin);
-  
+export async function validatePinSecurely(inputPin: string, storedPinHash: string): Promise<boolean> {
+  // Hash the input PIN using SHA-256
+  const inputHash = await secureHash(inputPin);
+
   // Use constant-time comparison
   return constantTimeCompare(inputHash, storedPinHash);
 }
 
-// Simple hash function (REPLACE with proper hashing in production)
-function simpleHash(input: string): string {
-  // This is a placeholder - use crypto.subtle.digest or proper password hashing
+// Secure hash function using Web Crypto API (SHA-256)
+async function secureHash(input: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(input);
+
+  try {
+    const hashBuffer = await window.crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return hashHex;
+  } catch (error) {
+    // Fallback for environments without crypto.subtle (should never happen in modern browsers)
+    console.error('[SecureCrypto] SHA-256 unavailable:', error);
+    throw new Error('Secure hashing unavailable');
+  }
+}
+
+// Legacy sync hash for backward compatibility (marked deprecated)
+/** @deprecated Use secureHash() instead - this is cryptographically weak */
+export function simpleHash(input: string): string {
+  console.warn('[SecureCrypto] simpleHash is deprecated and cryptographically weak');
   let hash = 0;
   for (let i = 0; i < input.length; i++) {
     const char = input.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32-bit integer
+    hash = hash & hash;
   }
   return Math.abs(hash).toString(16);
 }
@@ -74,7 +88,7 @@ export async function deriveKeySecurely(
     // Create purpose-separated key material
     const encoder = new TextEncoder();
     const purposeData = encoder.encode(pin + purpose);
-    
+
     // Import base key material
     const baseKey = await window.crypto.subtle.importKey(
       'raw',
@@ -100,7 +114,7 @@ export async function deriveKeySecurely(
 
     // Zeroize sensitive material
     secureZeroize(purposeData);
-    
+
     return derivedKey;
   } catch (error) {
     console.error('[SecureCrypto] Key derivation failed:', error);
@@ -116,7 +130,7 @@ export async function encryptSecurely(
   try {
     const iv = window.crypto.getRandomValues(new Uint8Array(12));
     const encoded = new TextEncoder().encode(JSON.stringify(data));
-    
+
     const cipher = await window.crypto.subtle.encrypt(
       { name: 'AES-GCM', iv },
       key,

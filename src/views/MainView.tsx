@@ -20,7 +20,7 @@ import { NarrativeMemory } from '../../components/NarrativeMemory';
 import { StreakBadge } from '../../components/StreakBadge';
 import { ZenResponse } from '../../types';
 import { detectEmergency } from '../../data/emergencyKeywords';
-import { Keyboard, Mic, Languages, SendHorizontal, Brain, Sparkles, Wifi, WifiOff, RotateCcw, Eye, BookOpen } from 'lucide-react';
+import { Keyboard, Mic, Languages, SendHorizontal, Brain, Sparkles, RotateCcw, Eye, BookOpen } from 'lucide-react';
 import { haptic } from '../../utils/designSystem';
 import { useZenSession } from '../../hooks/useZenSession';
 import { useUIStore, useZenStore } from '../../store/zenStore';
@@ -58,7 +58,6 @@ export function MainView() {
     // Audio Viz State (Driven by real analyzer or mock)
     const [audioIntensity, setAudioIntensity] = useState(0);
     const analyserRef = useRef<AnalyserNode | null>(null);
-    const animationFrameRef = useRef<number | null>(null);
     const dataArrayRef = useRef<Uint8Array | null>(null);
 
     // --- Session Hook ---
@@ -85,201 +84,197 @@ export function MainView() {
     // Zero-allocation audio processing with WASM acceleration
 
     const visualizationLoop = useRef<{
-      rafId: number | null;
-      isActive: boolean;
-      lastCleanup: number;
-      memoryPressure: number;
+        rafId: number | null;
+        isActive: boolean;
+        lastCleanup: number;
+        memoryPressure: number;
     }>({ rafId: null, isActive: false, lastCleanup: Date.now(), memoryPressure: 0 });
 
     // WeakRef pattern for audio data to prevent memory leaks
     const audioDataWeakRef = useRef<WeakRef<Uint8Array> | null>(null);
-    
+
     // Adaptive quality based on performance
     const [visualQuality, setVisualQuality] = useState<'high' | 'medium' | 'low'>('high');
-    
+
     // Performance monitoring
     const frameTimeHistory = useRef<number[]>([]);
-    const lastFrameTime = useRef(performance.now());
 
     // Extreme optimization: Memory pressure detection
     const detectMemoryPressure = useCallback(() => {
-      if ('memory' in performance) {
-        const mem = (performance as any).memory;
-        const usedRatio = mem.usedJSHeapSize / mem.jsHeapSizeLimit;
-        return usedRatio;
-      }
-      return 0;
+        if ('memory' in performance) {
+            const mem = (performance as any).memory;
+            const usedRatio = mem.usedJSHeapSize / mem.jsHeapSizeLimit;
+            return usedRatio;
+        }
+        return 0;
     }, []);
 
     // Adaptive quality adjustment
     const adjustQuality = useCallback((frameTime: number) => {
-      frameTimeHistory.current.push(frameTime);
-      if (frameTimeHistory.current.length > 60) {
-        frameTimeHistory.current.shift();
-      }
-      
-      const avgFrameTime = frameTimeHistory.current.reduce((a, b) => a + b, 0) / frameTimeHistory.current.length;
-      const memoryPressure = detectMemoryPressure();
-      
-      if (avgFrameTime > 16.67 || memoryPressure > 0.8) {
-        setVisualQuality('low');
-      } else if (avgFrameTime > 8.33 || memoryPressure > 0.6) {
-        setVisualQuality('medium');
-      } else {
-        setVisualQuality('high');
-      }
+        frameTimeHistory.current.push(frameTime);
+        if (frameTimeHistory.current.length > 60) {
+            frameTimeHistory.current.shift();
+        }
+
+        const avgFrameTime = frameTimeHistory.current.reduce((a, b) => a + b, 0) / frameTimeHistory.current.length;
+        const memoryPressure = detectMemoryPressure();
+
+        if (avgFrameTime > 16.67 || memoryPressure > 0.8) {
+            setVisualQuality('low');
+        } else if (avgFrameTime > 8.33 || memoryPressure > 0.6) {
+            setVisualQuality('medium');
+        } else {
+            setVisualQuality('high');
+        }
     }, [detectMemoryPressure]);
 
     // Extreme optimized visualization loop
     const optimizedVisualizationLoop = useCallback(() => {
-      const startTime = performance.now();
-      
-      // Memory pressure check
-      const memoryPressure = detectMemoryPressure();
-      visualizationLoop.current.memoryPressure = memoryPressure;
-      
-      if (memoryPressure > 0.9) {
-        console.warn('[Visualization] Critical memory pressure - disabling visualization');
-        setAudioIntensity(0);
-        return;
-      }
+        const startTime = performance.now();
 
-      if (status.kind === 'processing') {
-        // Optimized mock intensity with reduced calculations
-        const time = Date.now() / 1000;
-        const intensity = visualQuality === 'high' 
-          ? 0.2 + Math.sin(time * 5) * 0.1 + Math.sin(time * 3) * 0.05
-          : visualQuality === 'medium'
-          ? 0.2 + Math.sin(time * 3) * 0.1
-          : 0.2 + Math.sin(time * 2) * 0.08;
-        setAudioIntensity(intensity);
-        
-        visualizationLoop.current.rafId = requestAnimationFrame(optimizedVisualizationLoop);
-        return;
-      }
+        // Memory pressure check
+        const memoryPressure = detectMemoryPressure();
+        visualizationLoop.current.memoryPressure = memoryPressure;
 
-      if (!analyserRef.current) {
-        setAudioIntensity(0);
+        if (memoryPressure > 0.9) {
+            console.warn('[Visualization] Critical memory pressure - disabling visualization');
+            setAudioIntensity(0);
+            return;
+        }
+
+        if (status.kind === 'processing') {
+            // Optimized mock intensity with reduced calculations
+            const time = Date.now() / 1000;
+            const intensity = visualQuality === 'high'
+                ? 0.2 + Math.sin(time * 5) * 0.1 + Math.sin(time * 3) * 0.05
+                : visualQuality === 'medium'
+                    ? 0.2 + Math.sin(time * 3) * 0.1
+                    : 0.2 + Math.sin(time * 2) * 0.08;
+            setAudioIntensity(intensity);
+
+            visualizationLoop.current.rafId = requestAnimationFrame(optimizedVisualizationLoop);
+            return;
+        }
+
+        if (!analyserRef.current) {
+            setAudioIntensity(0);
+            if (status.kind !== 'idling') {
+                visualizationLoop.current.rafId = requestAnimationFrame(optimizedVisualizationLoop);
+            }
+            return;
+        }
+
+        // Optimized frequency analysis with quality scaling
+        const binCount = visualQuality === 'high' ? 64 : visualQuality === 'medium' ? 32 : 16;
+
+        if (!dataArrayRef.current || dataArrayRef.current.length !== analyserRef.current.frequencyBinCount) {
+            const newArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+            dataArrayRef.current = newArray;
+            audioDataWeakRef.current = new WeakRef(newArray);
+        }
+
+        // FIX: Cast to any to handle SharedArrayBuffer type mismatch in strict mode
+        analyserRef.current.getByteFrequencyData(dataArrayRef.current as any);
+
+        // Optimized intensity calculation
+        let sum = 0;
+        const actualBinCount = Math.min(binCount, dataArrayRef.current.length);
+
+        // SIMD-like optimization (unrolled loop for performance)
+        if (actualBinCount >= 8) {
+            let i = 0;
+            for (; i < actualBinCount - 7; i += 8) {
+                sum += dataArrayRef.current[i] + dataArrayRef.current[i + 1] +
+                    dataArrayRef.current[i + 2] + dataArrayRef.current[i + 3] +
+                    dataArrayRef.current[i + 4] + dataArrayRef.current[i + 5] +
+                    dataArrayRef.current[i + 6] + dataArrayRef.current[i + 7];
+            }
+            for (; i < actualBinCount; i++) {
+                sum += dataArrayRef.current[i];
+            }
+        } else {
+            for (let i = 0; i < actualBinCount; i++) {
+                sum += dataArrayRef.current[i];
+            }
+        }
+
+        const average = sum / actualBinCount;
+        const normalizedIntensity = average / 128.0;
+
+        // Apply quality-based smoothing
+        const smoothedIntensity = visualQuality === 'high'
+            ? normalizedIntensity
+            : visualQuality === 'medium'
+                ? normalizedIntensity * 0.8 + audioIntensity * 0.2
+                : normalizedIntensity * 0.6 + audioIntensity * 0.4;
+
+        setAudioIntensity(smoothedIntensity);
+
+        // Performance monitoring
+        const frameTime = performance.now() - startTime;
+        adjustQuality(frameTime);
+
         if (status.kind !== 'idling') {
-          visualizationLoop.current.rafId = requestAnimationFrame(optimizedVisualizationLoop);
+            visualizationLoop.current.rafId = requestAnimationFrame(optimizedVisualizationLoop);
         }
-        return;
-      }
-
-      // Optimized frequency analysis with quality scaling
-      const binCount = visualQuality === 'high' ? 64 : visualQuality === 'medium' ? 32 : 16;
-      
-      if (!dataArrayRef.current || dataArrayRef.current.length !== analyserRef.current.frequencyBinCount) {
-        const newArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-        dataArrayRef.current = newArray;
-        audioDataWeakRef.current = new WeakRef(newArray);
-      }
-
-      analyserRef.current.getByteFrequencyData(dataArrayRef.current);
-
-      // Optimized intensity calculation
-      let sum = 0;
-      const actualBinCount = Math.min(binCount, dataArrayRef.current.length);
-      
-      // SIMD-like optimization (unrolled loop for performance)
-      if (actualBinCount >= 8) {
-        let i = 0;
-        for (; i < actualBinCount - 7; i += 8) {
-          sum += dataArrayRef.current[i] + dataArrayRef.current[i+1] + 
-                dataArrayRef.current[i+2] + dataArrayRef.current[i+3] +
-                dataArrayRef.current[i+4] + dataArrayRef.current[i+5] + 
-                dataArrayRef.current[i+6] + dataArrayRef.current[i+7];
-        }
-        for (; i < actualBinCount; i++) {
-          sum += dataArrayRef.current[i];
-        }
-      } else {
-        for (let i = 0; i < actualBinCount; i++) {
-          sum += dataArrayRef.current[i];
-        }
-      }
-      
-      const average = sum / actualBinCount;
-      const normalizedIntensity = average / 128.0;
-      
-      // Apply quality-based smoothing
-      const smoothedIntensity = visualQuality === 'high' 
-        ? normalizedIntensity 
-        : visualQuality === 'medium'
-        ? normalizedIntensity * 0.8 + audioIntensity * 0.2
-        : normalizedIntensity * 0.6 + audioIntensity * 0.4;
-      
-      setAudioIntensity(smoothedIntensity);
-
-      // Performance monitoring
-      const frameTime = performance.now() - startTime;
-      adjustQuality(frameTime);
-
-      // Adaptive frame rate based on quality
-      const targetFPS = visualQuality === 'high' ? 60 : visualQuality === 'medium' ? 30 : 15;
-      const targetFrameTime = 1000 / targetFPS;
-      
-      if (status.kind !== 'idling') {
-        visualizationLoop.current.rafId = requestAnimationFrame(optimizedVisualizationLoop);
-      }
     }, [status, visualQuality, audioIntensity, adjustQuality, detectMemoryPressure]);
 
     // Extreme cleanup with WeakRef and memory zeroization
     useEffect(() => {
-      if (status.kind !== 'idling') {
-        if (!visualizationLoop.current.isActive) {
-          visualizationLoop.current.isActive = true;
-          optimizedVisualizationLoop();
-        }
-      } else {
-        if (visualizationLoop.current.rafId) {
-          cancelAnimationFrame(visualizationLoop.current.rafId);
-          visualizationLoop.current.rafId = null;
-        }
-        visualizationLoop.current.isActive = false;
-        setAudioIntensity(0);
-        
-        // Aggressive cleanup
-        if (dataArrayRef.current) {
-          dataArrayRef.current.fill(0);
-          if (audioDataWeakRef.current) {
-            const data = audioDataWeakRef.current.deref();
-            if (data) data.fill(0);
-          }
-          dataArrayRef.current = null;
-          audioDataWeakRef.current = null;
-        }
-      }
+        if (status.kind !== 'idling') {
+            if (!visualizationLoop.current.isActive) {
+                visualizationLoop.current.isActive = true;
+                optimizedVisualizationLoop();
+            }
+        } else {
+            if (visualizationLoop.current.rafId) {
+                cancelAnimationFrame(visualizationLoop.current.rafId);
+                visualizationLoop.current.rafId = null;
+            }
+            visualizationLoop.current.isActive = false;
+            setAudioIntensity(0);
 
-      return () => {
-        // Extreme cleanup on unmount
-        if (visualizationLoop.current.rafId) {
-          cancelAnimationFrame(visualizationLoop.current.rafId);
+            // Aggressive cleanup
+            if (dataArrayRef.current) {
+                dataArrayRef.current.fill(0);
+                if (audioDataWeakRef.current) {
+                    const data = audioDataWeakRef.current.deref();
+                    if (data) data.fill(0);
+                }
+                dataArrayRef.current = null;
+                audioDataWeakRef.current = null;
+            }
         }
-        
-        // Force garbage collection hint
-        if (dataArrayRef.current) {
-          dataArrayRef.current.fill(0);
-          dataArrayRef.current = null;
-        }
-        
-        if (audioDataWeakRef.current) {
-          const data = audioDataWeakRef.current?.deref();
-          if (data) data.fill(0);
-          audioDataWeakRef.current = null;
-        }
-        
-        analyserRef.current = null;
-        visualizationLoop.current.isActive = false;
-        
-        // Clear performance monitoring
-        frameTimeHistory.current = [];
-        
-        // Request garbage collection in development
-        if (process.env.NODE_ENV === 'development' && 'gc' in window) {
-          (window as any).gc();
-        }
-      };
+
+        return () => {
+            // Extreme cleanup on unmount
+            if (visualizationLoop.current.rafId) {
+                cancelAnimationFrame(visualizationLoop.current.rafId);
+            }
+
+            // Force garbage collection hint
+            if (dataArrayRef.current) {
+                dataArrayRef.current.fill(0);
+                dataArrayRef.current = null;
+            }
+
+            if (audioDataWeakRef.current) {
+                const data = audioDataWeakRef.current?.deref();
+                if (data) data.fill(0);
+                audioDataWeakRef.current = null;
+            }
+
+            analyserRef.current = null;
+            visualizationLoop.current.isActive = false;
+
+            // Clear performance monitoring
+            frameTimeHistory.current = [];
+
+            // Request garbage collection in development
+            if (process.env.NODE_ENV === 'development' && 'gc' in window) {
+                (window as any).gc();
+            }
+        };
     }, [status, optimizedVisualizationLoop]);
 
     // Force hide practices when switching to text mode
@@ -339,8 +334,6 @@ export function MainView() {
     const handleSendText = async (text: string) => {
         if (!text.trim()) return;
 
-        // Removed hardcoded offline check to allow Offline AI service to handle it
-
         const response = await sendText(text);
         if (response) {
             setInputText('');
@@ -361,11 +354,6 @@ export function MainView() {
         setInputText('');
         setSnackbar({ text: "Bắt đầu phiên mới", kind: 'info' });
     };
-
-    // --- DEBUG: Loading State ---
-    useEffect(() => {
-        console.log('🜂 Loading state changed:', isLoading);
-    }, [isLoading]);
 
     // --- DEBUG: Component Lifecycle ---
     useEffect(() => {

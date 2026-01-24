@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { TrendingDown, TrendingUp, Minus, Calendar, Activity, Award } from 'lucide-react';
+import { TrendingDown, TrendingUp, Minus, Calendar, Activity, Award, X } from 'lucide-react';
 import { PHQ4Result } from '../types';
 import { PHQ4Service } from '../services/phq4Service';
+import { getWidthClass } from '../src/utils/progressUtils';
 
 interface Props {
   latestResult?: PHQ4Result;
@@ -16,6 +17,25 @@ export const PHQ4Results: React.FC<Props> = ({ latestResult, onClose, language }
   useEffect(() => {
     loadData();
   }, []);
+
+  // Handle click outside to close
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
+  // Handle ESC key
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
 
   const loadData = async () => {
     const trendData = await PHQ4Service.analyzeTrend();
@@ -84,22 +104,40 @@ export const PHQ4Results: React.FC<Props> = ({ latestResult, onClose, language }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4"
+      onClick={handleBackdropClick}
+    >
+      <div 
+        className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto border border-white/20 relative animate-[scaleIn_0.3s_ease-out]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Close Button */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 z-10 p-2 rounded-full bg-white/10 hover:bg-white/20 text-gray-600 hover:text-gray-800 transition-all backdrop-blur-sm"
+          aria-label="Close results"
+        >
+          <X size={20} />
+        </button>
+
         {/* Header */}
-        <div className={`bg-gradient-to-r ${severityColors[latestResult.severity]} text-white p-6 rounded-t-2xl`}>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-2xl font-bold">{text.title}</h2>
-            <span className="text-4xl">{severityIcons[latestResult.severity]}</span>
+        <div className={`bg-gradient-to-r ${severityColors[latestResult.severity]} text-white p-6 rounded-t-3xl relative overflow-hidden`}>
+          <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent"></div>
+          <div className="relative z-10">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-2xl font-bold">{text.title}</h2>
+              <span className="text-4xl animate-bounce-subtle">{severityIcons[latestResult.severity]}</span>
+            </div>
+            <p className="text-white/90 text-sm">
+              {new Date(latestResult.timestamp).toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+              })}
+            </p>
           </div>
-          <p className="text-white/90 text-sm">
-            {new Date(latestResult.timestamp).toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-US', {
-              weekday: 'long',
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric'
-            })}
-          </p>
         </div>
 
         {/* Score Summary */}
@@ -115,8 +153,7 @@ export const PHQ4Results: React.FC<Props> = ({ latestResult, onClose, language }
             </div>
             <div className="w-full bg-stone-200 rounded-full h-2 overflow-hidden">
               <div
-                className={`h-full bg-gradient-to-r ${severityColors[latestResult.severity]} transition-all duration-1000`}
-                style={{ width: `${(latestResult.total_score / 12) * 100}%` }}
+                className={`h-full bg-gradient-to-r ${severityColors[latestResult.severity]} results-bar-fill ${getWidthClass((latestResult.total_score / 12) * 100)}`}
               />
             </div>
           </div>
@@ -201,10 +238,10 @@ export const PHQ4Results: React.FC<Props> = ({ latestResult, onClose, language }
         </div>
 
         {/* Close Button */}
-        <div className="border-t border-stone-200 p-4">
+        <div className="border-t border-stone-200/60 p-4 bg-stone-50/50 rounded-b-3xl">
           <button
             onClick={onClose}
-            className="w-full py-3 px-4 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-medium transition-all shadow-lg"
+            className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-medium transition-all shadow-lg hover:shadow-xl transform hover:scale-[1.02]"
           >
             {text.close}
           </button>
@@ -231,8 +268,7 @@ const ScoreCard: React.FC<ScoreCardProps> = ({ label, score, max, color }) => {
       </div>
       <div className="w-full bg-stone-200 rounded-full h-1.5 overflow-hidden">
         <div
-          className={`h-full bg-gradient-to-r ${color} transition-all duration-700`}
-          style={{ width: `${(score / max) * 100}%` }}
+          className={`h-full bg-gradient-to-r ${color} results-bar-fill ${getWidthClass((score / max) * 100)}`}
         />
       </div>
     </div>

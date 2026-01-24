@@ -130,6 +130,100 @@
       }
     }
 
+    /* Enhanced animations */
+    @keyframes glow {
+      0%, 100% {
+        box-shadow: 0 0 20px rgba(0, 243, 255, 0.3);
+      }
+      50% {
+        box-shadow: 0 0 40px rgba(0, 243, 255, 0.6);
+      }
+    }
+
+    @keyframes float {
+      0%, 100% {
+        transform: translateY(0px);
+      }
+      50% {
+        transform: translateY(-10px);
+      }
+    }
+
+    @keyframes shimmer {
+      0% {
+        background-position: -200% center;
+      }
+      100% {
+        background-position: 200% center;
+      }
+    }
+
+    @keyframes pulse-slow {
+      0%, 100% {
+        opacity: 0.8;
+      }
+      50% {
+        opacity: 1;
+      }
+    }
+
+    @keyframes bounce-subtle {
+      0%, 100% {
+        transform: translateY(0);
+      }
+      50% {
+        transform: translateY(-2px);
+      }
+    }
+
+    @keyframes rotate-slow {
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @keyframes wave {
+      0% {
+        transform: translateX(-100%);
+      }
+      100% {
+        transform: translateX(100%);
+      }
+    }
+
+    .animate-glow {
+      animation: glow 2s ease-in-out infinite;
+    }
+
+    .animate-float {
+      animation: float 3s ease-in-out infinite;
+    }
+
+    .animate-shimmer {
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+      background-size: 200% 100%;
+      animation: shimmer 2s infinite;
+    }
+
+    .animate-pulse-slow {
+      animation: pulse-slow 3s ease-in-out infinite;
+    }
+
+    .animate-bounce-subtle {
+      animation: bounce-subtle 2s ease-in-out infinite;
+    }
+
+    .animate-rotate-slow {
+      animation: rotate-slow 20s linear infinite;
+    }
+
+    .animate-wave {
+      animation: wave 2s ease-in-out infinite;
+    }
+
     /* Scrollbar hiding */
     .no-scrollbar::-webkit-scrollbar {
       display: none;
@@ -158,19 +252,91 @@
       }
     }
 
-    /* Custom Scrollbar for history */
+    /* Modern Scrollbar for history */
     .custom-scrollbar::-webkit-scrollbar {
-      width: 4px;
+      width: 6px;
     }
 
     .custom-scrollbar::-webkit-scrollbar-track {
-      background: transparent;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 3px;
     }
 
     .custom-scrollbar::-webkit-scrollbar-thumb {
-      background: #d6d3d1;
-      border-radius: 4px;
+      background: linear-gradient(180deg, rgba(0, 243, 255, 0.3), rgba(147, 51, 234, 0.3));
+      border-radius: 3px;
+      transition: background-color 0.2s ease;
     }
+
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: linear-gradient(180deg, rgba(0, 243, 255, 0.5), rgba(147, 51, 234, 0.5));
+    }
+
+    /* Enhanced glassmorphism */
+    .glass-enhanced {
+      background: rgba(255, 255, 255, 0.1);
+      -webkit-backdrop-filter: blur(20px);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    }
+
+    .glass-card {
+      background: rgba(255, 255, 255, 0.08);
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 16px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Modern color palette */
+    .primary-gradient {
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    }
+
+    .secondary-gradient {
+      background: linear-gradient(135deg, #10b981, #06b6d4);
+    }
+
+    .accent-gradient {
+      background: linear-gradient(135deg, #f59e0b, #ef4444);
+    }
+
+    /* Enhanced shadows */
+    .shadow-glow {
+      box-shadow: 0 0 40px rgba(0, 243, 255, 0.3);
+    }
+
+    .shadow-card {
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    }
+
+    /* Dynamic width utilities for progress bars */
+    .progress-bar-fill {
+      transition: all 0.7s ease;
+    }
+
+    .dna-bar-fill {
+      transition: all 0.7s ease;
+    }
+
+    .results-bar-fill {
+      transition: all 1s ease;
+    }
+
+    /* Width utilities for progress bars */
+    .w-0 { width: 0%; }
+    .w-10 { width: 10%; }
+    .w-20 { width: 20%; }
+    .w-30 { width: 30%; }
+    .w-40 { width: 40%; }
+    .w-50 { width: 50%; }
+    .w-60 { width: 60%; }
+    .w-70 { width: 70%; }
+    .w-80 { width: 80%; }
+    .w-90 { width: 90%; }
+    .w-100 { width: 100%; }
   </style>
   <script type="importmap">
 {
