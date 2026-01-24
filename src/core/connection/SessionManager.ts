@@ -5,6 +5,7 @@ import { haptic } from '../../../utils/designSystem';
 import { sendZenTextQuery } from '../../../services/geminiService';
 import { ZenResponse, ConversationEntry } from '../../../types';
 import { dbService } from '../../../services/db';
+import { logger } from '../../utils/logger';
 
 class SessionManager {
     private static instance: SessionManager;
@@ -85,7 +86,7 @@ class SessionManager {
             return response;
 
         } catch (e: any) {
-            console.error(e);
+            logger.error(e);
             useZenStore.getState().transitionTo({ kind: 'idling' });
             return null;
         }
@@ -154,7 +155,7 @@ class SessionManager {
         const { transitionTo, setConnectionState } = useZenStore.getState();
         const { setInputMode } = useUIStore.getState();
 
-        console.error("Connection failed:", e);
+            logger.error("Connection failed:", e);
         transitionTo({ kind: 'idling' });
         setConnectionState('disconnected');
 

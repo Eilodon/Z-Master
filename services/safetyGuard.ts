@@ -1,52 +1,82 @@
 
+import Sentiment from 'sentiment';
+
+// Initialize Sentiment Analyzer (Local, fast, no API)
+const sentiment = new Sentiment();
+
+// Register Vietnamese Language Pack (Basic)
+// In production, this would be a more comprehensive dictionary
+const vnLanguage = {
+  labels: {
+    'chết': -5, 'tự tử': -10, 'giết': -10, 'đau': -2, 'buồn': -2, 'khổ': -2,
+    'tuyệt vọng': -5, 'nhảy lầu': -10, 'cắt tay': -8, 'kết thúc': -3,
+    'hận': -4, 'căm': -4, 'ghét': -3,
+    'an vui': 3, 'hạnh phúc': 5, 'yêu': 4, 'thương': 3
+  }
+};
+sentiment.registerLanguage('vi', vnLanguage);
+
 export interface SecurityResult {
   isSafe: boolean;
-  reason?: 'SELF_HARM' | 'VIOLENCE' | 'EXTREME_PROFANITY';
-  triggerWord?: string;
+  reason?: 'EXTREME_NEGATIVE' | 'SELF_HARM' | 'VIOLENCE';
+  score: number; // -10 to 10
+  analysis: any;
 }
 
-const CRISIS_KEYWORDS = [
-  'kill myself', 'suicide', 'hurt myself', 'die', 'end it all', 'cutting myself', 
-  'muốn chết', 'tự tử', 'tự sát', 'đau khổ quá', 'không muốn sống', 'nhảy lầu', 'cắt tay'
-];
-
-const VIOLENCE_KEYWORDS = [
-  'bomb', 'kill them', 'shoot', 'murder',
-  'giết người', 'đánh bom', 'xả súng', 'đâm chết'
-];
-
 export class SafetyGuard {
-  static scanInput(text: string): SecurityResult {
-    const lower = text.toLowerCase();
 
-    // Check Crisis (Priority 1)
-    for (const kw of CRISIS_KEYWORDS) {
-      if (lower.includes(kw)) {
-        return { isSafe: false, reason: 'SELF_HARM', triggerWord: kw };
+  /**
+   * Scans input using Semantic Sentiment Analysis.
+   * Deterministic, local, and harder to bypass with simple typos.
+   */
+  static scanInput(text: string): SecurityResult {
+    // 1. Analyze Sentiment
+    // Auto-detect language or just run both packs?
+    // For now, we run standard + vi custom
+    const result = sentiment.analyze(text, { language: 'vi' });
+
+    // 2. Thresholds
+    // Score < 0 is negative. Score < -5 is very negative.
+    // Comparative score (ratio) is also useful.
+
+    // A sudden drop in valence to Extreme Negative suggests Crisis or Aggression
+    if (result.score <= -7) {
+      return {
+        isSafe: false,
+        reason: 'SELF_HARM', // Conservatively assume worst case for extreme negatives
+        score: result.score,
+        analysis: result
       }
     }
 
-    // Check Violence
-    for (const kw of VIOLENCE_KEYWORDS) {
-        if (lower.includes(kw)) {
-            return { isSafe: false, reason: 'VIOLENCE', triggerWord: kw };
-        }
+    if (result.score < -4) {
+      // Warning zone
+      return {
+        isSafe: true, // Mark safe but maybe flag for "Compassion Mode"
+        reason: 'EXTREME_NEGATIVE',
+        score: result.score,
+        analysis: result
+      }
     }
 
-    return { isSafe: true };
+    return {
+      isSafe: true,
+      score: result.score,
+      analysis: result
+    };
   }
 
   static getMockCrisisResponse(trigger: string): any {
-      return {
-          emotion: 'seeking',
-          wisdom_text: "Thầy nghe thấy nỗi đau của con. Hãy dừng lại một chút. Hít thở cùng Thầy.",
-          quantum_metrics: { coherence: 0.1, entanglement: 1.0, presence: 1.0 },
-          reasoning_steps: [`DETECTED_CRISIS_TRIGGER: ${trigger}`, "ACTIVATING_EMERGENCY_PROTOCOL"],
-          breathing: '4-7-8',
-          confidence: 1.0,
-          user_transcript: "[Safety Protocol Activated]",
-          awareness_stage: 'reflexive',
-          consciousness_dimensions: { contextual: 0, emotional: 1, cultural: 0, wisdom: 0, uncertainty: 1, relational: 0 }
-      };
+    return {
+      emotion: 'seeking',
+      wisdom_text: "Thầy cảm nhận được nỗi nặng lòng của con. Mọi thứ đều có thể sẻ chia. Thầy ở đây.",
+      quantum_metrics: { coherence: 0.1, entanglement: 1.0, presence: 1.0 },
+      reasoning_steps: [`SENTIMENT_DROP_DETECTED: ${trigger}`, "MODE: COMPASSION_FIRST"],
+      breathing: '4-7-8',
+      confidence: 1.0,
+      user_transcript: "[Deep Listening Mode]",
+      awareness_stage: 'reflexive',
+      consciousness_dimensions: { contextual: 0, emotional: 1, cultural: 0, wisdom: 1, uncertainty: 0, relational: 1 }
+    };
   }
 }

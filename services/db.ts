@@ -14,20 +14,18 @@ export interface IDBConversation {
 const openDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
-
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'id' });
       }
     };
-
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
 };
 
-import { cryptoService } from './crypto';
+import { VaultService } from './crypto';
 
 // New Schema for Encrypted Entry
 interface EncryptedEntry {
@@ -51,17 +49,17 @@ export const dbService = {
         emotion: entry.emotion,
         quantum_metrics: entry.quantum_metrics,
         summary: entry.summary,
-        // We might want to encrypt everything except ID/Timestamp for sorting
       };
 
-      const { iv, cipher } = await cryptoService.encryptData(payload);
+      // USE VAULT
+      const { iv, cipher } = await VaultService.encrypt(payload);
 
       const sealedEntry: EncryptedEntry = {
         id: entry.id,
         timestamp: entry.timestamp,
-        iv: Array.from(iv), // Convert TypedArray to normal array for structured clone
+        iv: Array.from(iv),
         cipher: cipher,
-        version: 2 // Mark as encrypted
+        version: 3 // Mark as Vault Encrypted
       };
 
       const db = await openDB();
@@ -79,6 +77,8 @@ export const dbService = {
   },
 
   async getAllEntries(): Promise<IDBConversation[]> {
+    if (!VaultService.isAuthenticated()) return []; // Cannot read without unlock
+
     const db = await openDB();
     const rawEntries: any[] = await new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
@@ -88,33 +88,24 @@ export const dbService = {
       request.onerror = () => reject(request.error);
     });
 
-    // Decrypt and Map
     const results: IDBConversation[] = [];
 
     for (const raw of rawEntries) {
-      if (raw.version === 2 && raw.cipher && raw.iv) {
+      if ((raw.version === 2 || raw.version === 3) && raw.cipher && raw.iv) {
         try {
-          // Decrypt
           const iv = new Uint8Array(raw.iv);
-          const decrypted = await cryptoService.decryptData(iv, raw.cipher);
+          const decrypted = await VaultService.decrypt(iv, raw.cipher);
           results.push({
             id: raw.id,
             timestamp: raw.timestamp,
             ...decrypted
           });
         } catch (e) {
-          console.warn(`[DB] Failed to decrypt entry ${raw.id}, skipping.`, e);
+          console.warn(`[DB] Decryption failed for ${raw.id} (Wrong key?)`, e);
         }
-      } else {
-        // Legacy handling: If it looks like old data (plaintext emotion present)
-        if (raw.emotion) {
-          console.log(`[DB] Migrating legacy entry ${raw.id} on read...`);
-          // Optional: We could trigger a rewrite here to encrypt it, 
-          // but for now, just return it so we don't lose data.
-          // Ideally, we run a background migration job. 
-          // For this turn, we just support reading it.
-          results.push(raw as IDBConversation);
-        }
+      } else if (raw.emotion) {
+        // Legacy cleartext - allow reading but warn
+        results.push(raw);
       }
     }
 

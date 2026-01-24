@@ -22,9 +22,9 @@ export const LoadingScreen: React.FC<Props> = ({ onComplete, onStartInteraction 
           setIsReady(true); // Wait for user interaction
           return 100;
         }
-        return prev + 2; 
+        return prev + 2;
       });
-    }, 30); 
+    }, 30);
 
     return () => clearInterval(interval);
   }, []);
@@ -32,53 +32,48 @@ export const LoadingScreen: React.FC<Props> = ({ onComplete, onStartInteraction 
   const handleStart = async () => {
     // 1. Trigger permission request immediately while user click context is active
     if (onStartInteraction) {
-        setIsRequesting(true);
-        try {
-            // AWAIT user action here. If fail, jump to catch.
-            await onStartInteraction();
-            
-            // 2. Start fade out animation ONLY IF SUCCESS
-            setIsFading(true);
-            
-            // 3. Unmount after animation
-            setTimeout(() => {
-                onComplete?.();
-            }, 1000);
-        } catch (e) {
-            console.warn("Permission denied or failed", e);
-            // Reset state so user can try again
-            setIsRequesting(false);
-            // This alert is a last resort fallback, usually App.tsx handles the UI
-            // alert("Vui lòng cấp quyền Microphone để trò chuyện với Thầy.");
-        }
-    } else {
-        // Fallback
+      setIsRequesting(true);
+      try {
+        // AWAIT user action here.
+        await onStartInteraction();
+      } catch (e) {
+        console.warn("Permission request failed, proceeding to fallback", e);
+        // We assume the hook handled state (e.g. switched to text mode)
+      } finally {
+        // FORCE ENTRY: Always animation out after interaction
         setIsFading(true);
         setTimeout(() => {
-            onComplete?.();
+          onComplete?.();
         }, 1000);
+      }
+    } else {
+      // No interaction needed fallback
+      setIsFading(true);
+      setTimeout(() => {
+        onComplete?.();
+      }, 1000);
     }
   };
 
   return (
-    <div 
+    <div
       className={`fixed inset-0 z-[70] bg-gradient-to-br from-amber-50 to-orange-100 flex flex-col items-center justify-center transition-opacity duration-1000 ease-in-out ${isFading ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
     >
       <div className="text-6xl mb-6 animate-pulse">🪷</div>
       <h1 className="text-3xl font-bold text-orange-600 mb-2 font-serif">Thầy.AI</h1>
-      
+
       {/* Dynamic Status Text */}
       <p className="text-stone-600 mb-8 font-light italic h-6 transition-all duration-500">
-        {isReady 
-            ? (isRequesting ? "Đang xử lý..." : "Cần cấp quyền Micro & Camera để bắt đầu") 
-            : "Đang kết nối với trí tuệ..."}
+        {isReady
+          ? (isRequesting ? "Đang xử lý..." : "Cần cấp quyền Micro & Camera để bắt đầu")
+          : "Đang kết nối với trí tuệ..."}
       </p>
-      
+
       {/* Progress Bar / Start Button Swap */}
       <div className="h-14 flex items-center justify-center relative w-64">
         {!isReady ? (
           <div className="w-full h-2 bg-stone-200 rounded-full overflow-hidden">
-            <div 
+            <div
               className="h-full bg-gradient-to-r from-orange-500 to-red-500 transition-all duration-300 ease-out"
               style={{ width: `${progress}%` }}
             />
