@@ -1,5 +1,5 @@
 import { useCallback, useEffect } from 'react';
-import { useZenStore } from '../store/zenStore';
+import { useZenStore } from '../../store/zenStore';
 
 export function usePermissions() {
     const { micStatus, setMicStatus } = useZenStore();

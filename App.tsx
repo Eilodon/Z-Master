@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { MainView } from './src/views/MainViewOptimized';
+import { MainView } from './src/views/MainView';
 import { dbService } from './services/db';
 import { useZenStore } from './store/zenStore';
 import { ExtremeErrorBoundary } from './components/ExtremeErrorBoundary';

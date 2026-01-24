@@ -1,6 +1,6 @@
 import { useRef, useCallback } from 'react';
 import { sessionManager } from '../core/connection/SessionManager';
-import { ZenResponse } from '../types';
+import { ZenResponse } from '../../types';
 
 interface UseZenSessionProps {
     onEmergencyDetected?: () => void;
