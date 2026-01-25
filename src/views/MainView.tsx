@@ -27,19 +27,32 @@ import { useUIStore, useZenStore } from '../../store/zenStore';
 import { usePermissions } from '../../hooks/usePermissions';
 
 import { SoulOrb } from '../components/Viz/SoulOrb';
-const OrbViz = React.lazy(() => import('../components/Viz/OrbViz'));
+import { VisualizationManager } from '../components/Viz/VisualizationManager';
 
 export function MainView() {
     // --- DEBUG: Component Mounting ---
     console.log('🜂 MainView component mounting...');
 
     // --- Global State ---
-    const {
-        culturalMode, language, inputMode, snackbar, isLoading, showBreathing, emergencyActive, visualizationMode,
-        setCulturalMode, setLanguage, setInputMode, setSnackbar, setIsLoading, setShowBreathing, setEmergencyActive, setVisualizationMode
-    } = useUIStore();
+    // --- Global State (Optimized Selectors) ---
+    const culturalMode = useUIStore(s => s.culturalMode);
+    const language = useUIStore(s => s.language);
+    const inputMode = useUIStore(s => s.inputMode);
+    const snackbar = useUIStore(s => s.snackbar);
+    const isLoading = useUIStore(s => s.isLoading);
+    const showBreathing = useUIStore(s => s.showBreathing);
+    const emergencyActive = useUIStore(s => s.emergencyActive);
+    const visualizationMode = useUIStore(s => s.visualizationMode);
 
-    const { status, connectionState, zenData, history, setHistory, setZenData } = useZenStore();
+    // Setters (Stable functions, can be bulk selected if needed, but safe here)
+    const { setCulturalMode, setLanguage, setInputMode, setSnackbar, setIsLoading, setShowBreathing, setEmergencyActive, setVisualizationMode } = useUIStore();
+
+    const status = useZenStore(s => s.status);
+    const connectionState = useZenStore(s => s.connectionState);
+    const zenData = useZenStore(s => s.zenData);
+    const history = useZenStore(s => s.history);
+    const setHistory = useZenStore(s => s.setHistory);
+    const setZenData = useZenStore(s => s.setZenData);
 
     // --- DEBUG: Store States ---
     console.log('🜂 Store states:', { isLoading, status: status.kind, zenData: !!zenData });
@@ -55,17 +68,14 @@ export function MainView() {
     const [hasError, setHasError] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
 
-    // Audio Viz State (Driven by real analyzer or mock)
-    const [audioIntensity, setAudioIntensity] = useState(0);
-    const analyserRef = useRef<AnalyserNode | null>(null);
-    const dataArrayRef = useRef<Uint8Array | null>(null);
+    const sessionAnalyserRef = useRef<AnalyserNode | null>(null);
 
     // --- Session Hook ---
     const {
         connect,
         disconnect,
         sendText,
-        analyserRef: sessionAnalyserRef
+        analyserRef: hookAnalyserRef
     } = useZenSession({
         onEmergencyDetected: () => setEmergencyActive(true),
         onError: (msg, kind) => {
@@ -73,216 +83,6 @@ export function MainView() {
             setSnackbar({ text: msg, kind });
         }
     });
-
-    // Sync Analyser
-    useEffect(() => {
-        analyserRef.current = sessionAnalyserRef.current;
-    }, [sessionAnalyserRef.current]);
-
-    // --- EXTREME MEMORY MANAGEMENT VISUALIZER ---
-    // Implements Chrome-style WeakRef patterns + React Concurrent optimization
-    // Zero-allocation audio processing with WASM acceleration
-
-    const visualizationLoop = useRef<{
-        rafId: number | null;
-        isActive: boolean;
-        lastCleanup: number;
-        memoryPressure: number;
-    }>({ rafId: null, isActive: false, lastCleanup: Date.now(), memoryPressure: 0 });
-
-    // WeakRef pattern for audio data to prevent memory leaks
-    const audioDataWeakRef = useRef<WeakRef<Uint8Array> | null>(null);
-
-    // Adaptive quality based on performance
-    const [visualQuality, setVisualQuality] = useState<'high' | 'medium' | 'low'>('high');
-
-    // Performance monitoring
-    const frameTimeHistory = useRef<number[]>([]);
-
-    // Extreme optimization: Memory pressure detection
-    const detectMemoryPressure = useCallback(() => {
-        if ('memory' in performance) {
-            const mem = (performance as any).memory;
-            const usedRatio = mem.usedJSHeapSize / mem.jsHeapSizeLimit;
-            return usedRatio;
-        }
-        return 0;
-    }, []);
-
-    // Adaptive quality adjustment
-    const adjustQuality = useCallback((frameTime: number) => {
-        frameTimeHistory.current.push(frameTime);
-        if (frameTimeHistory.current.length > 60) {
-            frameTimeHistory.current.shift();
-        }
-
-        const avgFrameTime = frameTimeHistory.current.reduce((a, b) => a + b, 0) / frameTimeHistory.current.length;
-        const memoryPressure = detectMemoryPressure();
-
-        if (avgFrameTime > 16.67 || memoryPressure > 0.8) {
-            setVisualQuality('low');
-        } else if (avgFrameTime > 8.33 || memoryPressure > 0.6) {
-            setVisualQuality('medium');
-        } else {
-            setVisualQuality('high');
-        }
-    }, [detectMemoryPressure]);
-
-    // Extreme optimized visualization loop
-    const optimizedVisualizationLoop = useCallback(() => {
-        const startTime = performance.now();
-
-        // Memory pressure check
-        const memoryPressure = detectMemoryPressure();
-        visualizationLoop.current.memoryPressure = memoryPressure;
-
-        if (memoryPressure > 0.9) {
-            console.warn('[Visualization] Critical memory pressure - disabling visualization');
-            setAudioIntensity(0);
-            return;
-        }
-
-        if (status.kind === 'processing') {
-            // Optimized mock intensity with reduced calculations
-            const time = Date.now() / 1000;
-            const intensity = visualQuality === 'high'
-                ? 0.2 + Math.sin(time * 5) * 0.1 + Math.sin(time * 3) * 0.05
-                : visualQuality === 'medium'
-                    ? 0.2 + Math.sin(time * 3) * 0.1
-                    : 0.2 + Math.sin(time * 2) * 0.08;
-            setAudioIntensity(intensity);
-
-            visualizationLoop.current.rafId = requestAnimationFrame(optimizedVisualizationLoop);
-            return;
-        }
-
-        if (!analyserRef.current) {
-            setAudioIntensity(0);
-            if (status.kind !== 'idling') {
-                visualizationLoop.current.rafId = requestAnimationFrame(optimizedVisualizationLoop);
-            }
-            return;
-        }
-
-        // Optimized frequency analysis with quality scaling
-        const binCount = visualQuality === 'high' ? 64 : visualQuality === 'medium' ? 32 : 16;
-
-        if (!dataArrayRef.current || dataArrayRef.current.length !== analyserRef.current.frequencyBinCount) {
-            const newArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-            dataArrayRef.current = newArray;
-            audioDataWeakRef.current = new WeakRef(newArray);
-        }
-
-        // FIX: Cast to any to handle SharedArrayBuffer type mismatch in strict mode
-        analyserRef.current.getByteFrequencyData(dataArrayRef.current as any);
-
-        // Optimized intensity calculation
-        let sum = 0;
-        const actualBinCount = Math.min(binCount, dataArrayRef.current.length);
-
-        // SIMD-like optimization (unrolled loop for performance)
-        if (actualBinCount >= 8) {
-            let i = 0;
-            for (; i < actualBinCount - 7; i += 8) {
-                sum += dataArrayRef.current[i] + dataArrayRef.current[i + 1] +
-                    dataArrayRef.current[i + 2] + dataArrayRef.current[i + 3] +
-                    dataArrayRef.current[i + 4] + dataArrayRef.current[i + 5] +
-                    dataArrayRef.current[i + 6] + dataArrayRef.current[i + 7];
-            }
-            for (; i < actualBinCount; i++) {
-                sum += dataArrayRef.current[i];
-            }
-        } else {
-            for (let i = 0; i < actualBinCount; i++) {
-                sum += dataArrayRef.current[i];
-            }
-        }
-
-        const average = sum / actualBinCount;
-        const normalizedIntensity = average / 128.0;
-
-        // Apply quality-based smoothing
-        const smoothedIntensity = visualQuality === 'high'
-            ? normalizedIntensity
-            : visualQuality === 'medium'
-                ? normalizedIntensity * 0.8 + audioIntensity * 0.2
-                : normalizedIntensity * 0.6 + audioIntensity * 0.4;
-
-        setAudioIntensity(smoothedIntensity);
-
-        // Performance monitoring
-        const frameTime = performance.now() - startTime;
-        adjustQuality(frameTime);
-
-        if (status.kind !== 'idling') {
-            visualizationLoop.current.rafId = requestAnimationFrame(optimizedVisualizationLoop);
-        }
-    }, [status, visualQuality, audioIntensity, adjustQuality, detectMemoryPressure]);
-
-    // Extreme cleanup with WeakRef and memory zeroization
-    useEffect(() => {
-        if (status.kind !== 'idling') {
-            if (!visualizationLoop.current.isActive) {
-                visualizationLoop.current.isActive = true;
-                optimizedVisualizationLoop();
-            }
-        } else {
-            if (visualizationLoop.current.rafId) {
-                cancelAnimationFrame(visualizationLoop.current.rafId);
-                visualizationLoop.current.rafId = null;
-            }
-            visualizationLoop.current.isActive = false;
-            setAudioIntensity(0);
-
-            // Aggressive cleanup
-            if (dataArrayRef.current) {
-                dataArrayRef.current.fill(0);
-                if (audioDataWeakRef.current) {
-                    const data = audioDataWeakRef.current.deref();
-                    if (data) data.fill(0);
-                }
-                dataArrayRef.current = null;
-                audioDataWeakRef.current = null;
-            }
-        }
-
-        return () => {
-            // Extreme cleanup on unmount
-            if (visualizationLoop.current.rafId) {
-                cancelAnimationFrame(visualizationLoop.current.rafId);
-            }
-
-            // Force garbage collection hint
-            if (dataArrayRef.current) {
-                dataArrayRef.current.fill(0);
-                dataArrayRef.current = null;
-            }
-
-            if (audioDataWeakRef.current) {
-                const data = audioDataWeakRef.current?.deref();
-                if (data) data.fill(0);
-                audioDataWeakRef.current = null;
-            }
-
-            analyserRef.current = null;
-            visualizationLoop.current.isActive = false;
-
-            // Clear performance monitoring
-            frameTimeHistory.current = [];
-
-            // Request garbage collection in development
-            if (process.env.NODE_ENV === 'development' && 'gc' in window) {
-                (window as any).gc();
-            }
-        };
-    }, [status, optimizedVisualizationLoop]);
-
-    // Force hide practices when switching to text mode
-    useEffect(() => {
-        if (inputMode === 'text') {
-            setShowPractices(false);
-        }
-    }, [inputMode]);
 
     // --- Handlers ---
 
@@ -363,14 +163,6 @@ export function MainView() {
         };
     }, []);
 
-    // Determine Orb Mode
-    const orbMode = useMemo(() => {
-        if (status.kind === 'processing') return 'processing';
-        if (status.kind === 'speaking') return 'speaking';
-        if (status.kind === 'connected_listening' || status.kind === 'connecting') return 'listening';
-        return 'idle';
-    }, [status]);
-
     return (
         <div className="relative h-[100dvh] w-full overflow-hidden bg-gray-900 select-none font-sans text-gray-100">
             {/* Error Boundary Display */}
@@ -400,24 +192,12 @@ export function MainView() {
             {!isLoading && !hasError && (
                 <>
                     {/* --- 3D SPACE --- */}
-                    <div className="absolute inset-0 z-0 bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900">
-                        {visualizationMode === 'soul' ? (
-                            <Canvas camera={{ position: [0, 0, 5], fov: 45 }}>
-                                <ambientLight intensity={0.5} />
-                                <pointLight position={[10, 10, 10]} intensity={1} color="#00f3ff" />
-                                <pointLight position={[-10, -10, -10]} intensity={0.5} color="#ffd700" />
-                                <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
-                                <Suspense fallback={<div className="text-white text-center">Loading...</div>}>
-                                    <SoulOrb mode={orbMode} intensity={audioIntensity} />
-                                </Suspense>
-                                <OrbitControls enableZoom={false} enablePan={false} autoRotate autoRotateSpeed={0.5} />
-                            </Canvas>
-                        ) : (
-                            <Suspense fallback={<div className="absolute inset-0 flex items-center justify-center text-white">Loading Premium Viz...</div>}>
-                                <OrbViz analyser={analyserRef.current} emotion={zenData?.emotion || 'neutral'} frequencyData={dataArrayRef.current || undefined} />
-                            </Suspense>
-                        )}
-                    </div>
+                    <VisualizationManager
+                        status={status}
+                        visualizationMode={visualizationMode as any}
+                        analyser={hookAnalyserRef.current}
+                        zenData={zenData}
+                    />
 
                     <Suspense fallback={null}>
                         <AudioEngine

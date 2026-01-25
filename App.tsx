@@ -7,7 +7,7 @@ import { CryptoErrorBoundary } from './components/CryptoErrorBoundary';
 import { TestDashboard } from './test/TestDashboard';
 
 export default function App() {
-  const { setHistory } = useZenStore();
+  const setHistory = useZenStore(state => state.setHistory);
 
   React.useEffect(() => {
     // Load initial history with error handling

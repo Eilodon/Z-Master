@@ -11,7 +11,29 @@ import {
   PhenotypingInsights,
   SharingPreferences
 } from '../types/digitalPhenotyping';
+import { openDB, IDBPDatabase } from 'idb';
 import { VaultService } from './crypto';
+
+const DB_NAME = 'ThayAI_Phenotype_v1';
+const STORE_NAME = 'behavioral_data';
+
+// Singleton DB connection
+let dbPromise: Promise<IDBPDatabase> | null = null;
+const getDB = () => {
+  if (!dbPromise) {
+    dbPromise = openDB(DB_NAME, 1, {
+      upgrade(db) {
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          // Index theo timestamp để query range dễ dàng
+          const store = db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+          store.createIndex('timestamp', 'timestamp');
+          store.createIndex('type', 'data_type');
+        }
+      },
+    });
+  }
+  return dbPromise;
+};
 
 export class DigitalPhenotypingService {
   private static instance: DigitalPhenotypingService;
@@ -150,513 +172,51 @@ export class DigitalPhenotypingService {
     }
   }
 
-  private async processTypingData(): Promise<void> {
-    if (this.typingBuffer.length === 0) return;
-
-    // PRIVACY-FIRST: Process locally and immediately discard raw data
-    const typingDynamics = this.analyzeTypingDynamics(this.typingBuffer);
-
-    // Store ONLY aggregated insights - never raw keystroke data
-    await this.storeAggregatedInsights(typingDynamics);
-
-    // IMMEDIATELY clear raw data buffer - never persist raw timing
-    this.typingBuffer = [];
-
-    // Clear any temporary references
-    this.clearTemporaryTypingData();
-  }
-
-  private clearTemporaryTypingData(): void {
-    // Ensure no references to raw typing data remain
-    if (this.typingBuffer.length > 0) {
-      // Overwrite buffer with zeros for security
-      for (let i = 0; i < this.typingBuffer.length; i++) {
-        const dataPoint = this.typingBuffer[i];
-        if (dataPoint) {
-          // Clear sensitive timing data
-          dataPoint.keyDownTime = 0;
-          dataPoint.keyUpTime = 0;
-          dataPoint.key = ''; // Clear key instead of keyCode
-        }
-      }
-      this.typingBuffer = [];
-    }
-  }
-
-  private async storeAggregatedInsights(typingDynamics: TypingDynamics): Promise<void> {
-    // Store ONLY aggregated metrics - never raw keystroke timings
-    const aggregatedData = {
-      timestamp: Date.now(),
-      speed_wpm: typingDynamics.speed_wpm,
-      speed_variance: typingDynamics.speed_variance,
-      error_rate: typingDynamics.error_rate,
-      typing_fluency: typingDynamics.typing_fluency,
-      // IMPORTANT: NO raw timing data, NO key sequences, NO individual keystrokes
-      session_id: this.generateSessionId(),
-      data_type: 'aggregated_insights' // Explicitly mark as aggregated
-    };
-
-    // Store in secure local database only
-    await this.saveToSecureStorage(aggregatedData);
-  }
-
-  private generateSessionId(): string {
-    // Generate anonymous session ID - no user identifiers
-    return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
   private async saveToSecureStorage(data: any): Promise<void> {
     try {
-      // Use encrypted local storage via Vault
-      const encrypted = await this.encryptData(data);
-      // serialized format: { iv: string(base64), cipher: string(base64) }
-      localStorage.setItem(`phenotype_${data.session_id}`, JSON.stringify(encrypted));
+      // 1. Encrypt
+      const { iv, cipher } = await this.encryptData(data);
+
+      // 2. Prepare Record
+      const record = {
+        timestamp: data.timestamp,
+        data_type: data.data_type,
+        session_id: data.session_id,
+        iv: iv,     // Base64 string from encryptData
+        cipher: cipher // Base64 string from encryptData
+      };
+
+      // 3. Store in IndexedDB (Unlimited size vs 5MB localStorage)
+      const db = await getDB();
+      await db.add(STORE_NAME, record);
+
     } catch (error) {
-      console.error('[DigitalPhenotyping] Failed to store insights:', error);
-    }
-  }
-
-  private async encryptData(data: any): Promise<{ iv: string, cipher: string }> {
-    // secure encryption using VaultService
-    // We must ensure Vault is unlocked. If locked, we cannot save sensitive data.
-    if (!VaultService.isAuthenticated()) {
-      console.warn("[DigitalPhenotyping] Vault locked - cannot save data");
-      throw new Error("VAULT_LOCKED");
-    }
-
-    const { iv, cipher } = await VaultService.encrypt(data);
-
-    return {
-      iv: this.arrayBufferToBase64(iv),
-      cipher: this.arrayBufferToBase64(cipher)
-    };
-  }
-
-  // Helper for buffer conversion
-  private arrayBufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
-    let binary = '';
-    const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
-  }
-
-  private base64ToArrayBuffer(base64: string): ArrayBuffer {
-    const binary_string = atob(base64);
-    const len = binary_string.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i++) {
-      bytes[i] = binary_string.charCodeAt(i);
-    }
-    return bytes.buffer;
-  }
-
-  private analyzeTypingDynamics(events: TypingDataPoint[]): TypingDynamics {
-    if (events.length < 2) {
-      return this.getDefaultTypingDynamics();
-    }
-
-    // Calculate typing speed
-    const timeSpan = (events[events.length - 1].keyDownTime - events[0].keyDownTime) / 1000 / 60; // minutes
-    const wordCount = events[events.length - 1].currentTextLength / 5; // Average 5 chars per word
-    const speedWpm = wordCount / timeSpan;
-
-    // Calculate inter-key intervals
-    const intervals: number[] = [];
-    for (let i = 1; i < events.length; i++) {
-      intervals.push(events[i].keyDownTime - events[i - 1].keyDownTime);
-    }
-
-    const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-    const intervalStd = Math.sqrt(intervals.reduce((sq, n) => sq + Math.pow(n - avgInterval, 2), 0) / intervals.length);
-
-    // Analyze pauses (intervals > 2 seconds)
-    const longPauses = intervals.filter(i => i > 2000).length;
-    const pauseDurationAvg = intervals.filter(i => i > 500).reduce((a, b) => a + b, 0) / intervals.filter(i => i > 500).length || 0;
-
-    // Count corrections
-    const totalCorrections = events.reduce((sum, e) => sum + (e.corrections || 0), 0);
-    const errorRate = totalCorrections / events.length;
-
-    return {
-      speed_wpm: Math.max(0, speedWpm),
-      speed_variance: intervalStd / 1000, // Convert to seconds
-      error_rate: errorRate,
-      correction_latency: 0, // Would need more detailed tracking
-      pause_duration_avg: pauseDurationAvg,
-      pause_duration_variance: this.calculateVariance(intervals.filter(i => i > 500)),
-      keystroke_interval_std: intervalStd,
-      typing_fluency: Math.max(0, 1 - (intervalStd / avgInterval)), // Normalized fluency
-      rumination_indicators: {
-        long_pauses: longPauses,
-        deletions_per_minute: totalCorrections / timeSpan,
-        typing_bursts: this.calculateTypingBursts(events)
-      }
-    };
-  }
-
-  private getDefaultTypingDynamics(): TypingDynamics {
-    return {
-      speed_wpm: 0,
-      speed_variance: 0,
-      error_rate: 0,
-      correction_latency: 0,
-      pause_duration_avg: 0,
-      pause_duration_variance: 0,
-      keystroke_interval_std: 0,
-      typing_fluency: 0,
-      rumination_indicators: {
-        long_pauses: 0,
-        deletions_per_minute: 0,
-        typing_bursts: 0
-      }
-    };
-  }
-
-  // Voice Biomarker Collection
-  async recordVoiceSegment(audioData: Float32Array, sampleRate: number): Promise<void> {
-    if (!this.isCollecting || !(await this.hasConsent('voice_analysis'))) {
-      return;
-    }
-
-    const voiceBiomarkers = await this.analyzeVoiceBiomarkers(audioData, sampleRate);
-
-    const dataPoint: VoiceDataPoint = {
-      timestamp: Date.now(),
-      biomarkers: voiceBiomarkers
-    };
-
-    this.voiceBuffer.push(dataPoint);
-
-    if (this.voiceBuffer.length > 10) {
-      await this.processVoiceData();
-    }
-  }
-
-  private async analyzeVoiceBiomarkers(audioData: Float32Array, sampleRate: number): Promise<VoiceBiomarkers> {
-    // Simplified voice analysis - in production would use more sophisticated signal processing
-
-    // Calculate basic energy
-    const energy = audioData.reduce((sum, sample) => sum + sample * sample, 0) / audioData.length;
-
-    // Find fundamental frequency (simplified)
-    const pitch = this.estimatePitch(audioData, sampleRate);
-
-    // Calculate speech rate (would need speech detection)
-    const speechRate = this.estimateSpeechRate(audioData, sampleRate);
-
-    return {
-      pitch_mean: pitch,
-      pitch_variance: 0, // Would need multiple segments
-      pitch_range: 0,
-      speech_rate: speechRate,
-      pause_ratio: this.estimatePauseRatio(audioData),
-      pause_duration_avg: 0,
-      energy_mean: energy,
-      energy_variance: 0,
-      jitter: 0,
-      shimmer: 0,
-      harmonics_to_noise_ratio: 0,
-      emotional_tone: {
-        arousal: this.estimateArousal(energy),
-        valence: this.estimateValence(pitch, energy),
-        stress_markers: this.estimateStressMarkers(pitch, energy)
-      },
-      depression_markers: {
-        pitch_flattening: this.estimatePitchFlattening(pitch),
-        slowed_speech: speechRate < 120 ? 0.7 : 0.3,
-        reduced_energy: energy < 0.01 ? 0.8 : 0.2,
-        monotony: this.estimateMonotony(audioData)
-      },
-      anxiety_markers: {
-        pitch_elevation: pitch > 200 ? 0.7 : 0.3,
-        speech_acceleration: speechRate > 150 ? 0.6 : 0.4,
-        voice_tremor: this.estimateTremor(audioData),
-        breath_irregularity: this.estimateBreathIrregularity(audioData)
-      }
-    };
-  }
-
-  // Behavioral Pattern Collection
-  async recordBehaviorEvent(event: BehaviorEvent): Promise<void> {
-    if (!this.isCollecting || !(await this.hasConsent('usage_patterns'))) {
-      return;
-    }
-
-    const dataPoint: BehaviorDataPoint = {
-      timestamp: Date.now(),
-      eventType: event.type,
-      details: event.details
-    };
-
-    this.behaviorBuffer.push(dataPoint);
-
-    if (this.behaviorBuffer.length > 50) {
-      await this.processBehaviorData();
-    }
-  }
-
-  private async processBehaviorData(): Promise<void> {
-    if (this.behaviorBuffer.length === 0) return;
-
-    const patterns = this.analyzeBehavioralPatterns(this.behaviorBuffer);
-    await this.storeBehavioralPatterns(patterns);
-    this.behaviorBuffer = [];
-  }
-
-  private analyzeBehavioralPatterns(events: BehaviorDataPoint[]): BehavioralPatterns {
-    // Analyze session patterns
-    const sessionEvents = events.filter(e => e.eventType === 'session_start' || e.eventType === 'session_end');
-    const sessionDurations = this.calculateSessionDurations(sessionEvents);
-
-    // Analyze time patterns
-    const hourUsage = this.calculateHourlyUsage(events);
-    const firstOpenTime = this.findFirstOpenTime(events);
-
-    return {
-      session_frequency: sessionEvents.length / 7, // Sessions per day (last week)
-      session_duration_avg: sessionDurations.reduce((a, b) => a + b, 0) / sessionDurations.length || 0,
-      session_duration_variance: this.calculateVariance(sessionDurations),
-      first_open_time: firstOpenTime,
-      last_open_time: this.findLastOpenTime(events),
-      peak_usage_hours: this.findPeakUsageHours(hourUsage),
-      sleep_disruption_indicators: {
-        night_openings: events.filter(e => new Date(e.timestamp).getHours() < 6).length,
-        early_morning_usage: events.filter(e => new Date(e.timestamp).getHours() < 6).length,
-        irregular_schedule: this.calculateScheduleIrregularity(events)
-      },
-      practice_completion_rate: this.calculatePracticeCompletion(events),
-      feature_usage: this.calculateFeatureUsage(events),
-      social_engagement: this.calculateSocialEngagement(events),
-      behavioral_avoidance: this.calculateBehavioralAvoidance(events)
-    };
-  }
-
-  // Risk Assessment
-  async assessRisk(): Promise<RiskAssessment> {
-    const recentData = await this.getRecentPhenotypeData();
-
-    if (!recentData) {
-      return this.getDefaultRiskAssessment();
-    }
-
-    const depressionRisk = this.assessDepressionRisk(recentData);
-    const anxietyRisk = this.assessAnxietyRisk(recentData);
-    const crisisRisk = this.assessCrisisRisk(recentData);
-
-    const overallRisk = Math.max(depressionRisk.score, anxietyRisk.score, crisisRisk.score);
-
-    return {
-      timestamp: Date.now(),
-      risk_score: overallRisk,
-      confidence: this.calculateConfidence(recentData),
-      depression_risk: depressionRisk,
-      anxiety_risk: anxietyRisk,
-      crisis_risk: {
-        score: crisisRisk.score,
-        indicators: crisisRisk.indicators,
-        urgency: crisisRisk.urgency || 'medium'
-      },
-      protective_factors: this.assessProtectiveFactors(recentData),
-      recommendations: this.generateRecommendations(depressionRisk, anxietyRisk, crisisRisk)
-    };
-  }
-
-  private assessDepressionRisk(data: DigitalPhenotype): RiskDimension {
-    const indicators: string[] = [];
-    let score = 0;
-
-    // Voice biomarkers
-    if (data.voice_biomarkers) {
-      const { depression_markers } = data.voice_biomarkers;
-      if (depression_markers.pitch_flattening > 0.7) {
-        score += 0.3;
-        indicators.push('reduced_pitch_variability');
-      }
-      if (depression_markers.slowed_speech > 0.6) {
-        score += 0.2;
-        indicators.push('slowed_speech');
-      }
-      if (depression_markers.reduced_energy > 0.7) {
-        score += 0.3;
-        indicators.push('reduced_vocal_energy');
-      }
-    }
-
-    // Behavioral patterns
-    if (data.behavioral_patterns) {
-      const { session_frequency, sleep_disruption_indicators } = data.behavioral_patterns;
-      if (session_frequency < 0.3) {
-        score += 0.2;
-        indicators.push('reduced_engagement');
-      }
-      if (sleep_disruption_indicators.night_openings > 3) {
-        score += 0.2;
-        indicators.push('sleep_disruption');
-      }
-    }
-
-    // Self-reported mood
-    if (data.daily_mood && data.daily_mood.mood_rating < 4) {
-      score += 0.3;
-      indicators.push('low_self_reported_mood');
-    }
-
-    return {
-      score: Math.min(1, score),
-      indicators,
-      trend: this.calculateTrend(data, 'depression')
-    };
-  }
-
-  private assessAnxietyRisk(data: DigitalPhenotype): RiskDimension {
-    const indicators: string[] = [];
-    let score = 0;
-
-    // Voice biomarkers
-    if (data.voice_biomarkers) {
-      const { anxiety_markers } = data.voice_biomarkers;
-      if (anxiety_markers.pitch_elevation > 0.7) {
-        score += 0.3;
-        indicators.push('elevated_pitch');
-      }
-      if (anxiety_markers.speech_acceleration > 0.6) {
-        score += 0.2;
-        indicators.push('accelerated_speech');
-      }
-      if (anxiety_markers.voice_tremor > 0.5) {
-        score += 0.3;
-        indicators.push('voice_instability');
-      }
-    }
-
-    // Typing patterns
-    if (data.typing_dynamics) {
-      const { error_rate, rumination_indicators } = data.typing_dynamics;
-      if (error_rate > 0.1) {
-        score += 0.2;
-        indicators.push('increased_typing_errors');
-      }
-      if (rumination_indicators.long_pauses > 5) {
-        score += 0.2;
-        indicators.push('hesitant_typing');
-      }
-    }
-
-    // Self-reported anxiety
-    if (data.daily_mood && data.daily_mood.stress_level > 7) {
-      score += 0.3;
-      indicators.push('high_self_reported_stress');
-    }
-
-    return {
-      score: Math.min(1, score),
-      indicators,
-      trend: this.calculateTrend(data, 'anxiety')
-    };
-  }
-
-  private assessCrisisRisk(data: DigitalPhenotype): RiskDimension {
-    const indicators: string[] = [];
-    let score = 0;
-
-    // Immediate crisis indicators
-    if (data.behavioral_patterns) {
-      const { sleep_disruption_indicators, behavioral_avoidance } = data.behavioral_patterns;
-      if (sleep_disruption_indicators.night_openings > 5) {
-        score += 0.4;
-        indicators.push('severe_sleep_disruption');
-      }
-      if (behavioral_avoidance.session_abandonment > 0.8) {
-        score += 0.3;
-        indicators.push('complete_avoidance');
-      }
-    }
-
-    // Self-reported crisis indicators
-    if (data.daily_mood && data.daily_mood.mood_rating < 2) {
-      score += 0.5;
-      indicators.push('extremely_low_mood');
-    }
-
-    return {
-      score: Math.min(1, score),
-      indicators,
-      trend: 'worsening' // Crisis risk is always considered worsening
-    };
-  }
-
-  // Insights Generation
-  async generateInsights(startDate: string, endDate: string): Promise<PhenotypingInsights> {
-    const phenotypeData = await this.getPhenotypeDataInRange(startDate, endDate);
-
-    return {
-      user_id: 'current_user', // Would get from auth
-      generated_at: Date.now(),
-      insight_period: { start_date: startDate, end_date: endDate },
-      behavioral_patterns: this.analyzeBehavioralInsights(phenotypeData),
-      progress_metrics: this.analyzeProgressMetrics(phenotypeData),
-      predictions: this.generatePredictions(phenotypeData),
-      clinical_summary: this.generateClinicalSummary(phenotypeData)
-    };
-  }
-
-  // Data Storage and Retrieval
-  private async storeTypingDynamics(dynamics: TypingDynamics): Promise<void> {
-    // Store in encrypted database
-    const key = `typing_dynamics_${Date.now()}`;
-    await this.secureStore(key, dynamics);
-  }
-
-  private async storeVoiceBiomarkers(biomarkers: VoiceBiomarkers): Promise<void> {
-    const key = `voice_biomarkers_${Date.now()}`;
-    await this.secureStore(key, biomarkers);
-  }
-
-  private async storeBehavioralPatterns(patterns: BehavioralPatterns): Promise<void> {
-    const key = `behavioral_patterns_${Date.now()}`;
-    await this.secureStore(key, patterns);
-  }
-
-  private async secureStore(key: string, data: any): Promise<void> {
-    try {
-      const encrypted = await this.encryptData(data);
-      localStorage.setItem(`phenotype_${key}`, JSON.stringify(encrypted));
-    } catch (e) {
-      console.warn("[DigitalPhenotyping] Encryption failed", e);
+      console.error('[DigitalPhenotyping] Storage Failed:', error);
+      // Fallback: Drop data để bảo vệ app performance, KHÔNG dùng localStorage
     }
   }
 
   private async getRecentPhenotypeData(): Promise<DigitalPhenotype | null> {
-    // Get recent data from storage
-    const keys = Object.keys(localStorage).filter(k => k.startsWith('phenotype_'));
-    if (keys.length === 0) return null;
-
-    // Get the most recent data
-    const latestKey = keys.sort().pop();
-    if (!latestKey) return null;
-
     try {
-      const stored = localStorage.getItem(latestKey);
-      if (!stored) return null;
+      const db = await getDB();
+      // Lấy record mới nhất
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const index = tx.store.index('timestamp');
+      const cursor = await index.openCursor(null, 'prev'); // Descending
 
-      const { iv, cipher } = JSON.parse(stored);
+      if (!cursor) return null;
 
-      if (!VaultService.isAuthenticated()) {
-        console.warn("[DigitalPhenotyping] Vault locked - cannot read data");
-        return null;
-      }
-
-      const ivBuffer = this.base64ToArrayBuffer(iv);
-      const cipherBuffer = this.base64ToArrayBuffer(cipher);
+      const record = cursor.value;
 
       // Decrypt
-      const data = await VaultService.decrypt(new Uint8Array(ivBuffer), cipherBuffer);
-      return data;
-    } catch (error) {
-      console.error('Failed to decode/decrypt phenotype data:', error);
+      if (!VaultService.isAuthenticated()) return null;
+
+      const ivBuffer = this.base64ToArrayBuffer(record.iv);
+      const cipherBuffer = this.base64ToArrayBuffer(record.cipher);
+
+      return await VaultService.decrypt(new Uint8Array(ivBuffer), cipherBuffer);
+    } catch (e) {
+      console.error('Retrieval failed', e);
       return null;
     }
   }
@@ -887,9 +447,8 @@ export class DigitalPhenotypingService {
   }
 
   private async deleteCollectedData(): Promise<void> {
-    // Delete all phenotype data from storage
-    const keys = Object.keys(localStorage).filter(k => k.startsWith('phenotype_'));
-    keys.forEach(key => localStorage.removeItem(key));
+    const db = await getDB();
+    await db.clear(STORE_NAME);
   }
 
   private async saveConsent(): Promise<void> {
@@ -924,6 +483,220 @@ export class DigitalPhenotypingService {
 
     // Process voice data
     this.voiceBuffer = [];
+  }
+
+  private async encryptData(data: any): Promise<{ iv: string, cipher: string }> {
+    // secure encryption using VaultService
+    // We must ensure Vault is unlocked. If locked, we cannot save sensitive data.
+    if (!VaultService.isAuthenticated()) {
+      console.warn("[DigitalPhenotyping] Vault locked - cannot save data");
+      throw new Error("VAULT_LOCKED");
+    }
+
+    const { iv, cipher } = await VaultService.encrypt(data);
+
+    return {
+      iv: this.arrayBufferToBase64(iv),
+      cipher: this.arrayBufferToBase64(cipher)
+    };
+  }
+
+  // Helper for buffer conversion
+  private arrayBufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
+    let binary = '';
+    const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  }
+
+  private base64ToArrayBuffer(base64: string): ArrayBuffer {
+    const binary_string = atob(base64);
+    const len = binary_string.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binary_string.charCodeAt(i);
+    }
+    return bytes.buffer;
+  }
+
+  private async processTypingData(): Promise<void> {
+    if (this.typingBuffer.length === 0) return;
+
+    // PRIVACY-FIRST: Process locally and immediately discard raw data
+    const typingDynamics = this.analyzeTypingDynamics(this.typingBuffer);
+
+    // Store ONLY aggregated insights - never raw keystroke data
+    await this.storeAggregatedInsights(typingDynamics);
+
+    // IMMEDIATELY clear raw data buffer - never persist raw timing
+    this.typingBuffer = [];
+
+    // Clear any temporary references
+    this.clearTemporaryTypingData();
+  }
+
+  private clearTemporaryTypingData(): void {
+    // Ensure no references to raw typing data remain
+    if (this.typingBuffer.length > 0) {
+      // Overwrite buffer with zeros for security
+      for (let i = 0; i < this.typingBuffer.length; i++) {
+        const dataPoint = this.typingBuffer[i];
+        if (dataPoint) {
+          // Clear sensitive timing data
+          dataPoint.keyDownTime = 0;
+          dataPoint.keyUpTime = 0;
+          dataPoint.key = ''; // Clear key instead of keyCode
+        }
+      }
+      this.typingBuffer = [];
+    }
+  }
+
+  private async storeAggregatedInsights(typingDynamics: TypingDynamics): Promise<void> {
+    // Store ONLY aggregated metrics - never raw keystroke timings
+    const aggregatedData = {
+      timestamp: Date.now(),
+      speed_wpm: typingDynamics.speed_wpm,
+      speed_variance: typingDynamics.speed_variance,
+      error_rate: typingDynamics.error_rate,
+      typing_fluency: typingDynamics.typing_fluency,
+      // IMPORTANT: NO raw timing data, NO key sequences, NO individual keystrokes
+      session_id: this.generateSessionId(),
+      data_type: 'aggregated_insights' // Explicitly mark as aggregated
+    };
+
+    // Store in secure local database only
+    await this.saveToSecureStorage(aggregatedData);
+  }
+
+  private generateSessionId(): string {
+    // Generate anonymous session ID - no user identifiers
+    return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  private analyzeTypingDynamics(events: TypingDataPoint[]): TypingDynamics {
+    if (events.length < 2) {
+      return this.getDefaultTypingDynamics();
+    }
+
+    // Calculate typing speed
+    const timeSpan = (events[events.length - 1].keyDownTime - events[0].keyDownTime) / 1000 / 60; // minutes
+    const wordCount = events[events.length - 1].currentTextLength / 5; // Average 5 chars per word
+    const speedWpm = wordCount / timeSpan;
+
+    // Calculate inter-key intervals
+    const intervals: number[] = [];
+    for (let i = 1; i < events.length; i++) {
+      intervals.push(events[i].keyDownTime - events[i - 1].keyDownTime);
+    }
+
+    const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+    const intervalStd = Math.sqrt(intervals.reduce((sq, n) => sq + Math.pow(n - avgInterval, 2), 0) / intervals.length);
+
+    // Analyze pauses (intervals > 2 seconds)
+    const longPauses = intervals.filter(i => i > 2000).length;
+    const pauseDurationAvg = intervals.filter(i => i > 500).reduce((a, b) => a + b, 0) / intervals.filter(i => i > 500).length || 0;
+
+    // Count corrections
+    const totalCorrections = events.reduce((sum, e) => sum + (e.corrections || 0), 0);
+    const errorRate = totalCorrections / events.length;
+
+    return {
+      speed_wpm: Math.max(0, speedWpm),
+      speed_variance: intervalStd / 1000, // Convert to seconds
+      error_rate: errorRate,
+      correction_latency: 0, // Would need more detailed tracking
+      pause_duration_avg: pauseDurationAvg,
+      pause_duration_variance: this.calculateVariance(intervals.filter(i => i > 500)),
+      keystroke_interval_std: intervalStd,
+      typing_fluency: Math.max(0, 1 - (intervalStd / avgInterval)), // Normalized fluency
+      rumination_indicators: {
+        long_pauses: longPauses,
+        deletions_per_minute: totalCorrections / timeSpan,
+        typing_bursts: this.calculateTypingBursts(events)
+      }
+    };
+  }
+
+  private getDefaultTypingDynamics(): TypingDynamics {
+    return {
+      speed_wpm: 0,
+      speed_variance: 0,
+      error_rate: 0,
+      correction_latency: 0,
+      pause_duration_avg: 0,
+      pause_duration_variance: 0,
+      keystroke_interval_std: 0,
+      typing_fluency: 0,
+      rumination_indicators: {
+        long_pauses: 0,
+        deletions_per_minute: 0,
+        typing_bursts: 0
+      }
+    };
+  }
+
+  private analyzeBehavioralPatterns(events: BehaviorDataPoint[]): BehavioralPatterns {
+    // Analyze session patterns
+    const sessionEvents = events.filter(e => e.eventType === 'session_start' || e.eventType === 'session_end');
+    const sessionDurations = this.calculateSessionDurations(sessionEvents);
+
+    // Analyze time patterns
+    const hourUsage = this.calculateHourlyUsage(events);
+    const firstOpenTime = this.findFirstOpenTime(events);
+
+    return {
+      session_frequency: sessionEvents.length / 7, // Sessions per day (last week)
+      session_duration_avg: sessionDurations.reduce((a, b) => a + b, 0) / sessionDurations.length || 0,
+      session_duration_variance: this.calculateVariance(sessionDurations),
+      first_open_time: firstOpenTime,
+      last_open_time: this.findLastOpenTime(events),
+      peak_usage_hours: this.findPeakUsageHours(hourUsage),
+      sleep_disruption_indicators: {
+        night_openings: events.filter(e => new Date(e.timestamp).getHours() < 6).length,
+        early_morning_usage: events.filter(e => new Date(e.timestamp).getHours() < 6).length,
+        irregular_schedule: this.calculateScheduleIrregularity(events)
+      },
+      practice_completion_rate: this.calculatePracticeCompletion(events),
+      feature_usage: this.calculateFeatureUsage(events),
+      social_engagement: this.calculateSocialEngagement(events),
+      behavioral_avoidance: this.calculateBehavioralAvoidance(events)
+    };
+  }
+
+  private async processBehaviorData(): Promise<void> {
+    if (this.behaviorBuffer.length === 0) return;
+
+    const patterns = this.analyzeBehavioralPatterns(this.behaviorBuffer);
+    await this.storeBehavioralPatterns(patterns);
+    this.behaviorBuffer = [];
+  }
+
+  private async storeBehavioralPatterns(patterns: BehavioralPatterns): Promise<void> {
+    const key = `behavioral_patterns_${Date.now()}`;
+    await this.secureStore(key, patterns);
+  }
+
+  private async secureStore(key: string, data: any): Promise<void> {
+    try {
+      const encrypted = await this.encryptData(data);
+      // NEW idb logic already handles saveToSecureStorage for aggregated data
+      // But this method is used by internal helpers.
+      // Let's redirect it to saveToSecureStorage with prepared shape
+
+      await this.saveToSecureStorage({
+        timestamp: Date.now(),
+        data_type: 'pattern_snapshot',
+        session_id: key, // utilizing key as session_id for simplicity in this legacy method adaptation
+        ...data // spread actual data
+      });
+
+    } catch (e) {
+      console.warn("[DigitalPhenotyping] Encryption failed", e);
+    }
   }
 }
 

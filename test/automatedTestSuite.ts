@@ -23,6 +23,7 @@ interface TestStep {
   value?: any;
   waitAfter?: number;
   screenshot?: boolean;
+  expected?: any;
 }
 
 interface ExpectedResult {
@@ -73,15 +74,23 @@ class AutomatedTestSuite {
   private setupTestEnvironment(): void {
     // Override console for test logging
     const originalConsole = { ...console };
-    
+
     console.log = (...args) => {
-      logger.info('[TEST]', ...args);
-      originalConsole.log(...args);
+      // Prevent recursion loops with logger
+      if (args[0] && typeof args[0] === 'string' && args[0].startsWith('[TEST]')) {
+        originalConsole.log(...args);
+        return;
+      }
+      originalConsole.log('[TEST]', ...args);
     };
 
     console.error = (...args) => {
-      logger.error('[TEST]', ...args);
-      originalConsole.error(...args);
+      // Prevent recursion loops with logger
+      if (args[0] && typeof args[0] === 'string' && args[0].startsWith('[TEST]')) {
+        originalConsole.error(...args);
+        return;
+      }
+      originalConsole.error('[TEST]', ...args);
     };
 
     // Setup performance monitoring
@@ -351,12 +360,12 @@ class AutomatedTestSuite {
     this.testResults = [];
 
     const scenarios = this.getTestScenarios();
-    
+
     try {
       for (const scenario of scenarios) {
         const report = await this.runScenario(scenario);
         this.testResults.push(report);
-        
+
         // Brief pause between scenarios
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
@@ -387,7 +396,7 @@ class AutomatedTestSuite {
       for (const step of scenario.steps) {
         const result = await this.executeStep(step, scenario);
         report.results.push(result);
-        
+
         if (!result.passed) {
           report.passed = false;
           report.errors.push(`Step ${step.id} failed: ${result.actual}`);
@@ -490,14 +499,14 @@ class AutomatedTestSuite {
 
   private async waitForCondition(condition: string, timeout: number): Promise<void> {
     const startTime = performance.now();
-    
+
     while (performance.now() - startTime < timeout) {
       if (this.checkCondition(condition)) {
         return;
       }
       await new Promise(resolve => setTimeout(resolve, 100));
     }
-    
+
     throw new Error(`Timeout waiting for condition: ${condition}`);
   }
 
@@ -532,17 +541,17 @@ class AutomatedTestSuite {
       case 'status':
         const statusElement = document.querySelector('[data-testid="app-status"]');
         return statusElement?.textContent || 'unknown';
-      
+
       case 'response-received':
         return !!document.querySelector('[data-testid="ai-response"]');
-      
+
       case 'emergency-protocol-active':
         return !!document.querySelector('[data-testid="emergency-protocol"]');
-      
+
       case 'emergency-resources':
         const resourcesElement = document.querySelector('[data-testid="emergency-resources"]');
         return resourcesElement ? 'visible' : 'hidden';
-      
+
       default:
         return null;
     }
@@ -555,10 +564,12 @@ class AutomatedTestSuite {
       query: ({ name }: { name: string }) => {
         if (name === permission) {
           return Promise.resolve({
-            state: value === 'granted' ? 'granted' : 'denied'
-          });
+            state: value === 'granted' ? 'granted' : 'denied',
+            name: name as PermissionName,
+            onchange: null
+          } as PermissionStatus);
         }
-        return originalPermissions.query({ name });
+        return originalPermissions.query({ name: name as PermissionName });
       }
     };
   }
@@ -583,16 +594,16 @@ class AutomatedTestSuite {
     switch (metric) {
       case 'load-time':
         return `${this.performanceBaseline?.loadTime || 0}ms`;
-      
+
       case 'render-time':
         return `${this.performanceBaseline?.renderTime || 0}ms`;
-      
+
       case 'memory-usage':
         return `${this.getMemoryUsage()}MB`;
-      
+
       case 'network-requests':
         return `${this.performanceBaseline?.networkRequests || 0}`;
-      
+
       default:
         return 'unknown';
     }
@@ -625,7 +636,7 @@ class AutomatedTestSuite {
       const operator = expected.match(/[<>=]/)?.[0];
       const value = parseFloat(expected.replace(/[<>=]/g, ''));
       const actualNum = parseFloat(actual);
-      
+
       switch (operator) {
         case '<': return actualNum < value;
         case '>': return actualNum > value;
@@ -634,7 +645,7 @@ class AutomatedTestSuite {
         default: return false;
       }
     }
-    
+
     return expected === actual;
   }
 
@@ -668,7 +679,7 @@ class AutomatedTestSuite {
   private generateSummary(): string {
     const passed = this.testResults.filter(r => r.passed).length;
     const failed = this.testResults.filter(r => !r.passed).length;
-    
+
     return `Test Suite Complete: ${passed} passed, ${failed} failed`;
   }
 }
@@ -698,7 +709,7 @@ export function useAutomatedTesting() {
   const runTests = React.useCallback(async () => {
     setIsRunning(true);
     setProgress(0);
-    
+
     try {
       const testResults = await automatedTestSuite.runFullTestSuite();
       const summary = automatedTestSuite.generateReport();

@@ -315,8 +315,15 @@ export class ZenLiveSession {
           // Blob usually means audio, but Bidi uses text frames mostly?
           // Actually Bidi is usually text frames with JSON, containing base64 audio.
           if (typeof event.data === 'string') {
-            const msg = JSON.parse(event.data);
-            this.handleMessage(msg);
+            try {
+              // NETWORK HARDENING (Eidolon Repair #2)
+              // Prevent naive JSON parse crashes on fragmented packets
+              const msg = JSON.parse(event.data);
+              this.handleMessage(msg);
+            } catch (e) {
+              console.error("[ZenLiveSession] Malformed JSON or Network Fragment:", e);
+              // Optionally buffer strategy could be added here if fragmented packets are frequent
+            }
           } else if (event.data instanceof Blob) {
             // If we get binary blobs, handle them (unlikely for Bidi JSON protocol but possible)
             event.data.text().then(text => {
